@@ -23,7 +23,7 @@
     <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-6 mb-8 border-b border-slate-800 gap-4">
       <div>
         <h1 class="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
-          🔥 Binance Signal Screener
+          🔥 CuShin Signal Screener
         </h1>
         <p class="text-xs sm:text-sm text-slate-400 mt-1">Quét Top 100 Coin đa khung H4/H1/M15 · Trend + RSI + Hỗ trợ/Kháng cự + Fibonacci</p>
       </div>
@@ -164,6 +164,10 @@
                 <div class="flex justify-between items-center text-sm pt-2 border-t border-slate-800/60">
                   <span class="text-slate-400">Hỗ trợ / Kháng cự:</span>
                   <span class="mono text-slate-300">${item.support} / ${item.resistance}</span>
+                </div>
+                <div class="flex justify-between items-center text-sm">
+                  <span class="text-slate-400">Volume 24h:</span>
+                  <span class="mono text-slate-300">${item.volume_24h_fmt || 'N/A'} USDT</span>
                 </div>
               </div>
 
