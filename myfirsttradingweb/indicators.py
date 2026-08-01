@@ -2,8 +2,9 @@
 indicators.py
 -------------
 Module dùng chung cho phân tích kỹ thuật + sinh tín hiệu theo 3 "khung giao dịch"
-(profile) riêng biệt: SCALP (M15), SWING (H1), POSITION (H4). 
-Đã tích hợp ATR (Average True Range) để Stop Loss co giãn theo biến động thực tế của coin.
+(profile) riêng biệt: SCALP (M15), SWING (H1), POSITION (H4).
+Tích hợp ATR (Average True Range) để Stop Loss co giãn theo biến động thực tế của coin,
+và tính đòn bẩy đề xuất cụ thể dựa trên nguyên tắc giới hạn margin an toàn mỗi lệnh.
 """
 
 import pandas as pd
@@ -87,7 +88,7 @@ def nearest_fib_level(price, fib_levels, tolerance_pct=0.5):
     return None
 
 # ------------------------------------------------------------------
-# PHÂN TÍCH 1 KHUNG THỜI GIAN (Có tính ATR)
+# PHÂN TÍCH 1 KHUNG THỜI GIAN (có tính ATR)
 # ------------------------------------------------------------------
 def analyze_timeframe(df):
     if df is None or len(df) < 60:
@@ -127,7 +128,7 @@ def analyze_timeframe(df):
     }
 
 # ------------------------------------------------------------------
-# SINH TÍN HIỆU CHO 1 PROFILE CỤ THỂ (Dùng ATR để tối ưu SL)
+# SINH TÍN HIỆU CHO 1 PROFILE CỤ THỂ (dùng ATR để tối ưu SL)
 # ------------------------------------------------------------------
 def generate_signal_for_profile(tf_results, profile_key):
     profile = TRADE_PROFILES[profile_key]
@@ -169,20 +170,19 @@ def generate_signal_for_profile(tf_results, profile_key):
 
     price = entry["price"]
     atr = entry["atr"]
-    
-    # Tính toán SL theo biến động (ATR) kết hợp Hỗ trợ/Kháng cự
+
+    # Tính SL theo biến động (ATR) kết hợp Hỗ trợ/Kháng cự
     if "BUY" in signal_type:
-        sl = entry["support"] - (1.0 * atr)  # Cách hỗ trợ 1 khoảng ATR
-        if sl >= price:                      # Dự phòng lỗi nến giật
+        sl = entry["support"] - (1.0 * atr)
+        if sl >= price:
             sl = price - (1.5 * atr)
         tp = price + (price - sl) * 2
     else:
-        sl = entry["resistance"] + (1.0 * atr) # Cách kháng cự 1 khoảng ATR
+        sl = entry["resistance"] + (1.0 * atr)
         if sl <= price:
             sl = price + (1.5 * atr)
         tp = price - (sl - price) * 2
 
-    # Điểm hội tụ đa khung
     bull_w = sum(TF_WEIGHT[tf] for tf, r in tf_results.items() if r["trend"] == "UP")
     bear_w = sum(TF_WEIGHT[tf] for tf, r in tf_results.items() if r["trend"] == "DOWN")
     confluence_pct = round((bull_w if "BUY" in signal_type else bear_w) / TOTAL_WEIGHT * 100, 1)
@@ -214,26 +214,60 @@ def generate_all_signals(tf_results):
     return signals
 
 # ------------------------------------------------------------------
-# QUẢN LÝ VỐN: RỦI RO & KHỐI LƯỢNG (Giữ nguyên)
+# QUẢN LÝ VỐN: RỦI RO, MARGIN & ĐÒN BẨY ĐỀ XUẤT CỤ THỂ
 # ------------------------------------------------------------------
+# Nguyên tắc 3 bước:
+#  1) risk_percent  = % TÀI KHOẢN chấp nhận mất nếu dính Stop Loss (theo độ mạnh tín hiệu)
+#  2) margin_pct    = % TÀI KHOẢN thực sự bỏ ra làm margin cho lệnh này (giới hạn an toàn,
+#                     KHÔNG bao giờ dồn hết vốn vào 1 lệnh dù tín hiệu mạnh cỡ nào)
+#  3) leverage      = đòn bẩy cần dùng để notional position đạt đúng risk chuẩn với margin đó
+#                     leverage = notional_pct / margin_pct
+#     Tín hiệu càng mạnh (risk_percent cao hơn) → được phép dùng margin lớn hơn 1 chút,
+#     nên đòn bẩy cần thiết thường THẤP hơn so với tín hiệu yếu cùng khoảng cách SL.
 RISK_TIERS = [
-    (85, "Thấp", 2.0),
-    (70, "Trung bình", 1.0),
-    (0,  "Cao", 0.5),
+    # (ngưỡng confluence_pct, nhãn, risk_percent % TK nếu dính SL, margin_pct % TK dùng làm ký quỹ)
+    (85, "Thấp", 2.0, 12.0),
+    (70, "Trung bình", 1.0, 8.0),
+    (0,  "Cao", 0.5, 5.0),
 ]
 
+MAX_SAFE_LEVERAGE = 20   # trần đòn bẩy đề xuất — không đề xuất vượt mức này dù công thức ra cao hơn
+LEVERAGE_STEPS = [1, 2, 3, 5, 10, 15, 20, 25, 50, 75, 100]  # các mức đòn bẩy phổ biến trên sàn
+
 def classify_risk(confluence_pct):
-    for threshold, label, risk_percent in RISK_TIERS:
+    for threshold, label, risk_percent, margin_pct in RISK_TIERS:
         if confluence_pct >= threshold:
-            return label, risk_percent
-    return "Cao", 0.5
+            return label, risk_percent, margin_pct
+    return "Cao", 0.5, 5.0
+
+def snap_leverage(raw_leverage):
+    """Làm tròn lên mức đòn bẩy phổ biến gần nhất mà sàn thường hỗ trợ (5x, 10x, 20x...)."""
+    for step in LEVERAGE_STEPS:
+        if raw_leverage <= step:
+            return step
+    return LEVERAGE_STEPS[-1]
 
 def calc_position_sizing(entry, stop_loss, confluence_pct):
-    risk_label, risk_percent = classify_risk(confluence_pct)
+    """
+    Trả về: risk_label, risk_percent, margin_pct, leverage, leverage_capped
+    - margin_pct: % tài khoản nên bỏ ra làm ký quỹ cho lệnh này
+    - leverage: đòn bẩy đề xuất (đã làm tròn theo mức phổ biến, trần MAX_SAFE_LEVERAGE)
+    - leverage_capped: True nếu đòn bẩy CẦN để đạt đúng risk chuẩn vượt trần an toàn
+      (nghĩa là nếu dùng đúng leverage đề xuất, risk thực tế sẽ THẤP HƠN risk_percent — an toàn hơn,
+      không phải rủi ro hơn — nhưng bạn có thể cân nhắc bỏ qua lệnh này nếu muốn risk đúng chuẩn)
+    """
+    risk_label, risk_percent, margin_pct = classify_risk(confluence_pct)
+
     sl_distance_pct = abs(entry - stop_loss) / entry * 100
     if sl_distance_pct <= 0:
-        return risk_label, risk_percent, 0.0, False
-    position_pct = risk_percent / sl_distance_pct * 100
-    needs_leverage = position_pct > 100
-    position_pct = min(position_pct, 100.0)
-    return risk_label, risk_percent, round(position_pct, 2), needs_leverage
+        return risk_label, risk_percent, margin_pct, 1.0, False
+
+    # % tài khoản cần "phơi nhiễm" (notional) để đúng risk chuẩn nếu giao dịch không đòn bẩy (1x)
+    notional_pct = risk_percent / sl_distance_pct * 100
+
+    raw_leverage = notional_pct / margin_pct if margin_pct > 0 else 1.0
+    leverage = snap_leverage(raw_leverage)
+    leverage_capped = raw_leverage > MAX_SAFE_LEVERAGE
+    leverage = min(leverage, MAX_SAFE_LEVERAGE) if leverage_capped else leverage
+
+    return risk_label, risk_percent, round(margin_pct, 2), leverage, leverage_capped
