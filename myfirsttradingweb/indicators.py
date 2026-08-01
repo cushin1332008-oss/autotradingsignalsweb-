@@ -1,35 +1,61 @@
 """
 indicators.py
 -------------
-Module dùng chung cho toàn bộ logic phân tích kỹ thuật: trend, RSI, hỗ trợ/kháng cự,
-Fibonacci, chấm điểm hội tụ đa khung, và quản lý vốn theo % rủi ro.
+Module dùng chung cho phân tích kỹ thuật + sinh tín hiệu theo 3 "khung giao dịch"
+(profile) riêng biệt: SCALP (M15), SWING (H1), POSITION (H4). Mỗi profile có logic
+xác nhận xu hướng bằng khung thời gian lớn hơn riêng, phù hợp với người dùng có
+quỹ thời gian theo dõi khác nhau.
 
-Được import bởi CẢ autoscreener.py (bot chạy realtime) LẪN backtest.py (kiểm tra lịch sử),
-để đảm bảo backtest phản ánh đúng 100% logic mà bot thật đang chạy — tránh tình trạng
-"code backtest" và "code live" lệch nhau dẫn đến kết quả backtest không có ý nghĩa.
+Được import bởi CẢ autoscreener.py (bot live) LẪN backtest.py — đảm bảo backtest
+phản ánh đúng logic bot thật đang chạy.
 """
 
 import pandas as pd
 import pandas_ta as ta
 
 # ------------------------------------------------------------------
-# KHUNG THỜI GIAN & TRỌNG SỐ (khung lớn quan trọng hơn khung nhỏ)
+# KHUNG THỜI GIAN DÙNG ĐỂ PHÂN TÍCH & TRỌNG SỐ (khung lớn quan trọng hơn)
 # ------------------------------------------------------------------
 TIMEFRAMES = {
-    "M1": "1m",
-    "M5": "5m",
     "M15": "15m",
-    "H1": "1h",
-    "H4": "4h",
+    "H1":  "1h",
+    "H4":  "4h",
+    "D1":  "1d",
 }
-TF_WEIGHT = {"M1": 1, "M5": 1.5, "M15": 2, "H1": 3, "H4": 4}
+TF_WEIGHT = {"M15": 1, "H1": 2, "H4": 3, "D1": 4}
 TOTAL_WEIGHT = sum(TF_WEIGHT.values())
+
+# ------------------------------------------------------------------
+# 3 PROFILE GIAO DỊCH — mỗi profile = 1 khung vào lệnh + khung xác nhận xu hướng riêng
+# ------------------------------------------------------------------
+TRADE_PROFILES = {
+    "SCALP": {
+        "label": "Lướt sóng (M15)",
+        "entry_tf": "M15",
+        "bias_tfs": ["H1", "H4"],
+        "rsi_buy": 45, "rsi_sell": 55,
+        "tolerance_pct": 0.5,   # dung sai % để coi là "giá chạm" Fib/hỗ trợ/kháng cự
+    },
+    "SWING": {
+        "label": "Trung hạn (H1)",
+        "entry_tf": "H1",
+        "bias_tfs": ["H4", "D1"],
+        "rsi_buy": 45, "rsi_sell": 55,
+        "tolerance_pct": 0.8,
+    },
+    "POSITION": {
+        "label": "Dài hạn (H4)",
+        "entry_tf": "H4",
+        "bias_tfs": ["D1"],
+        "rsi_buy": 45, "rsi_sell": 55,
+        "tolerance_pct": 1.2,
+    },
+}
 
 # ------------------------------------------------------------------
 # HỖ TRỢ / KHÁNG CỰ / FIBONACCI
 # ------------------------------------------------------------------
 def find_support_resistance(df, lookback=50, window=3):
-    """Tìm vùng hỗ trợ/kháng cự dựa trên đỉnh/đáy cục bộ (swing high/low)."""
     recent = df.tail(lookback).reset_index(drop=True)
     highs, lows = [], []
     for i in range(window, len(recent) - window):
@@ -65,14 +91,9 @@ def nearest_fib_level(price, fib_levels, tolerance_pct=0.5):
     return None
 
 # ------------------------------------------------------------------
-# PHÂN TÍCH 1 KHUNG THỜI GIAN
+# PHÂN TÍCH 1 KHUNG THỜI GIAN (dùng chung cho mọi entry_tf / bias_tf)
 # ------------------------------------------------------------------
 def analyze_timeframe(df):
-    """
-    Nhận vào DataFrame nến (cột open/high/low/close), trả về dict:
-    trend, RSI, giá, hỗ trợ/kháng cự, điểm Fib gần nhất — cho khung thời gian đó.
-    Dùng nến đã đóng cửa gần nhất (index -2), tránh lấy nến đang chạy dở (-1).
-    """
     if df is None or len(df) < 60:
         return None
 
@@ -97,8 +118,6 @@ def analyze_timeframe(df):
         trend = "SIDEWAYS"
 
     support, resistance = find_support_resistance(df)
-    fibs = fibonacci_levels(support, resistance)
-    near_fib = nearest_fib_level(price, fibs)
 
     return {
         "price": float(price),
@@ -106,72 +125,87 @@ def analyze_timeframe(df):
         "trend": trend,
         "support": support,
         "resistance": resistance,
-        "near_fib": near_fib,
     }
 
 # ------------------------------------------------------------------
-# CHẤM ĐIỂM HỘI TỤ ĐA KHUNG & SINH TÍN HIỆU (LOGIC CỐT LÕI)
+# SINH TÍN HIỆU CHO 1 PROFILE CỤ THỂ
 # ------------------------------------------------------------------
-def generate_signal(tf_results):
-    """
-    Nhận vào dict {tf_label: analyze_timeframe_result}, trả về tín hiệu cuối cùng
-    (hoặc None nếu không đủ điều kiện). Đây là "bộ não" ra quyết định — dùng chung
-    cho cả bot live và backtest.
-    """
-    h4 = tf_results.get("H4")
-    h1 = tf_results.get("H1")
-    m15 = tf_results.get("M15")
+def generate_signal_for_profile(tf_results, profile_key):
+    profile = TRADE_PROFILES[profile_key]
+    entry = tf_results.get(profile["entry_tf"])
+    biases = [tf_results.get(tf) for tf in profile["bias_tfs"]]
 
-    if not (h4 and h1 and m15):
+    if not entry or any(b is None for b in biases):
         return None
 
-    bull_weight = sum(TF_WEIGHT[tf] for tf, r in tf_results.items() if r["trend"] == "UP")
-    bear_weight = sum(TF_WEIGHT[tf] for tf, r in tf_results.items() if r["trend"] == "DOWN")
+    bull_bias = all(b["trend"] == "UP" for b in biases)
+    bear_bias = all(b["trend"] == "DOWN" for b in biases)
+
+    tol = profile["tolerance_pct"]
+    fibs = fibonacci_levels(entry["support"], entry["resistance"])
+    near_fib = nearest_fib_level(entry["price"], fibs, tolerance_pct=tol)
 
     signal_type = None
     reasons = []
+    bias_label = " & ".join(profile["bias_tfs"])
 
-    if h4["trend"] == "UP" and h1["trend"] == "UP" and m15["rsi"] < 45:
-        near_support = abs(m15["price"] - m15["support"]) / m15["support"] * 100 < 1.0
-        if m15["near_fib"] or near_support:
+    if bull_bias and entry["rsi"] < profile["rsi_buy"]:
+        near_support = abs(entry["price"] - entry["support"]) / entry["support"] * 100 < tol * 2
+        if near_fib or near_support:
             signal_type = "BUY (LONG)"
-            reasons.append("H4 & H1 cùng xu hướng Tăng")
-            reasons.append(f"M15 RSI thấp ({round(m15['rsi'], 1)})")
-            reasons.append(f"Giá chạm Fib {m15['near_fib']}" if m15["near_fib"] else "Giá chạm vùng hỗ trợ M15")
+            reasons.append(f"{bias_label} cùng xu hướng Tăng")
+            reasons.append(f"{profile['entry_tf']} RSI thấp ({round(entry['rsi'], 1)})")
+            reasons.append(f"Giá chạm Fib {near_fib}" if near_fib else f"Giá chạm vùng hỗ trợ {profile['entry_tf']}")
 
-    elif h4["trend"] == "DOWN" and h1["trend"] == "DOWN" and m15["rsi"] > 55:
-        near_resistance = abs(m15["price"] - m15["resistance"]) / m15["resistance"] * 100 < 1.0
-        if m15["near_fib"] or near_resistance:
+    elif bear_bias and entry["rsi"] > profile["rsi_sell"]:
+        near_resistance = abs(entry["price"] - entry["resistance"]) / entry["resistance"] * 100 < tol * 2
+        if near_fib or near_resistance:
             signal_type = "SELL (SHORT)"
-            reasons.append("H4 & H1 cùng xu hướng Giảm")
-            reasons.append(f"M15 RSI cao ({round(m15['rsi'], 1)})")
-            reasons.append(f"Giá chạm Fib {m15['near_fib']}" if m15["near_fib"] else "Giá chạm vùng kháng cự M15")
+            reasons.append(f"{bias_label} cùng xu hướng Giảm")
+            reasons.append(f"{profile['entry_tf']} RSI cao ({round(entry['rsi'], 1)})")
+            reasons.append(f"Giá chạm Fib {near_fib}" if near_fib else f"Giá chạm vùng kháng cự {profile['entry_tf']}")
 
     if not signal_type:
         return None
 
-    price = m15["price"]
+    price = entry["price"]
     if "BUY" in signal_type:
-        sl = m15["support"] * 0.998
+        sl = entry["support"] * 0.998
         tp = price + (price - sl) * 2
-        confluence_pct = round(bull_weight / TOTAL_WEIGHT * 100, 1)
     else:
-        sl = m15["resistance"] * 1.002
+        sl = entry["resistance"] * 1.002
         tp = price - (sl - price) * 2
-        confluence_pct = round(bear_weight / TOTAL_WEIGHT * 100, 1)
+
+    # Điểm hội tụ: tính trên TẤT CẢ khung đã quét được (không chỉ riêng entry+bias của profile này)
+    bull_w = sum(TF_WEIGHT[tf] for tf, r in tf_results.items() if r["trend"] == "UP")
+    bear_w = sum(TF_WEIGHT[tf] for tf, r in tf_results.items() if r["trend"] == "DOWN")
+    confluence_pct = round((bull_w if "BUY" in signal_type else bear_w) / TOTAL_WEIGHT * 100, 1)
 
     return {
+        "profile": profile_key,
+        "trade_timeframe": profile["label"],
+        "entry_tf": profile["entry_tf"],
+        "bias_tfs": profile["bias_tfs"],
         "signal": signal_type,
         "price": float(price),
         "entry": float(price),
         "stop_loss": round(float(sl), 6),
         "take_profit": round(float(tp), 6),
         "reason": " + ".join(reasons),
-        "rsi_m15": round(float(m15["rsi"]), 2),
+        "rsi_entry_tf": round(float(entry["rsi"]), 2),
         "confluence_pct": confluence_pct,
-        "support": round(m15["support"], 6),
-        "resistance": round(m15["resistance"], 6),
+        "support": round(entry["support"], 6),
+        "resistance": round(entry["resistance"], 6),
     }
+
+def generate_all_signals(tf_results):
+    """Chạy cả 3 profile trên cùng 1 bộ tf_results, trả về dict {profile_key: signal}."""
+    signals = {}
+    for key in TRADE_PROFILES:
+        sig = generate_signal_for_profile(tf_results, key)
+        if sig:
+            signals[key] = sig
+    return signals
 
 # ------------------------------------------------------------------
 # QUẢN LÝ VỐN: PHÂN LOẠI RỦI RO & KHỐI LƯỢNG VÀO LỆNH THEO % TÀI KHOẢN
@@ -189,19 +223,11 @@ def classify_risk(confluence_pct):
     return "Cao", 0.5
 
 def calc_position_sizing(entry, stop_loss, confluence_pct):
-    """
-    % tài khoản nên vào lệnh = risk_percent / khoảng_cách_SL(%) * 100
-    (áp dụng cho spot / futures 1x, không đòn bẩy; risk_percent là % tài khoản
-    chấp nhận mất nếu dính Stop Loss, dựa theo độ mạnh tín hiệu).
-    """
     risk_label, risk_percent = classify_risk(confluence_pct)
-
     sl_distance_pct = abs(entry - stop_loss) / entry * 100
     if sl_distance_pct <= 0:
         return risk_label, risk_percent, 0.0, False
-
     position_pct = risk_percent / sl_distance_pct * 100
     needs_leverage = position_pct > 100
     position_pct = min(position_pct, 100.0)
-
     return risk_label, risk_percent, round(position_pct, 2), needs_leverage
