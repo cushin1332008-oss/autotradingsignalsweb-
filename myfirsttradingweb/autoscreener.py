@@ -1,43 +1,22 @@
 import os
-import json
-import threading
 import firebase_admin
 from firebase_admin import credentials, db
 from apscheduler.schedulers.background import BackgroundScheduler
-from flask import Flask
 import requests
 import pandas as pd
-import pandas_ta as ta
 import time
 
 # ------------------------------------------------------------------
-# 1. CẤU HÌNH FIREBASE ADMIN
-#    Thử lần lượt 3 cách, theo thứ tự ưu tiên:
-#    (a) Render Secret File tại /etc/secrets/firebase.json
-#    (b) Biến môi trường FIREBASE_CREDENTIALS chứa nguyên JSON
-#    (c) File serviceAccountKey.json cùng thư mục (chạy local)
+# 1. CẤU HÌNH FIREBASE ADMIN (Tự động nhận diện Render Secret File)
 # ------------------------------------------------------------------
 secret_path = "/etc/secrets/firebase.json"
-env_cred = os.environ.get("FIREBASE_CREDENTIALS")
-local_path = "serviceAccountKey.json"
 
 if os.path.exists(secret_path):
-    print(f"[🔑 AUTH] Dùng Render Secret File: {secret_path}")
     cred = credentials.Certificate(secret_path)
-elif env_cred:
-    print("[🔑 AUTH] Dùng biến môi trường FIREBASE_CREDENTIALS")
-    cred = credentials.Certificate(json.loads(env_cred))
-elif os.path.exists(local_path):
-    print(f"[🔑 AUTH] Dùng file local: {local_path}")
-    cred = credentials.Certificate(local_path)
+    print("🔑 [AUTH] Dùng Render Secret File:", secret_path)
 else:
-    raise RuntimeError(
-        "Không tìm thấy Firebase credentials ở bất kỳ đâu.\n"
-        "Trên Render: vào Environment -> Secret Files -> thêm file 'firebase.json' "
-        "(sẽ tự mount vào /etc/secrets/firebase.json), "
-        "hoặc thêm biến môi trường FIREBASE_CREDENTIALS chứa nội dung JSON của key.\n"
-        "Chạy local: đặt file serviceAccountKey.json cùng thư mục với script này."
-    )
+    cred = credentials.Certificate("serviceAccountKey.json")
+    print("🔑 [AUTH] Dùng file local test")
 
 firebase_admin.initialize_app(cred, {
     'databaseURL': 'https://webtrade-85ca8-default-rtdb.asia-southeast1.firebasedatabase.app'
@@ -45,8 +24,12 @@ firebase_admin.initialize_app(cred, {
 
 ref = db.reference('signals')
 
-# Danh sách Top Coin thanh khoản cao
-WATCHLIST = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "NEARUSDT", "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT"]
+# MỞ RỘNG DANH SÁCH WATCHLIST NHIỀU COIN HƠN
+WATCHLIST = [
+    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", 
+    "NEARUSDT", "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT", 
+    "DOTUSDT", "UNIUSDT", "ATOMUSDT", "APTUSDT", "SUIUSDT", "RENDERUSDT"
+]
 BINANCE_URL = "https://api.binance.com/api/v3/klines"
 
 def get_klines(symbol: str, interval: str, limit: int = 100):
@@ -58,7 +41,6 @@ def get_klines(symbol: str, interval: str, limit: int = 100):
             "close_time", "quote_asset_volume", "number_of_trades",
             "taker_buy_base_asset_volume", "taker_buy_quote_asset_volume", "ignore"
         ])
-        # Ép kiểu dữ liệu số
         for col in ["open", "high", "low", "close", "volume"]:
             df[col] = df[col].astype(float)
         return df
@@ -66,55 +48,54 @@ def get_klines(symbol: str, interval: str, limit: int = 100):
         return None
 
 # ------------------------------------------------------------------
+# HÀM TÍNH TOÁN CHỈ BÁO BẰNG PANDAS THUẦN
+# ------------------------------------------------------------------
+def calculate_indicators(df_h1, df_m15):
+    # Tính EMA 50 cho H1
+    df_h1['EMA_50'] = df_h1['close'].ewm(span=50, adjust=False).mean()
+
+    # Tính RSI 14 cho M15
+    delta = df_m15['close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    df_m15['RSI_14'] = 100 - (100 / (1 + rs))
+
+    # Tính MACD (12, 26, 9) cho M15
+    exp1 = df_m15['close'].ewm(span=12, adjust=False).mean()
+    exp2 = df_m15['close'].ewm(span=26, adjust=False).mean()
+    df_m15['MACD'] = exp1 - exp2
+    df_m15['MACD_SIGNAL'] = df_m15['MACD'].ewm(span=9, adjust=False).mean()
+
+# ------------------------------------------------------------------
 # 2. BỘ PHÂN TÍCH MÔ HÌNH NẾN & CHỈ BÁO NÂNG CAO
 # ------------------------------------------------------------------
 def analyze_advanced_setup(df_h1, df_m15):
-    """
-    Hàm phân tích thuật toán nâng cao: H1 EMA + M15 MACD Cross + RSI + Candle Pattern
-    """
-    # 1. TÍNH CHỈ BÁO H1
-    df_h1['EMA_50'] = ta.ema(df_h1['close'], length=50)
+    calculate_indicators(df_h1, df_m15)
 
-    # 2. TÍNH CHỈ BÁO M15
-    df_m15['RSI_14'] = ta.rsi(df_m15['close'], length=14)
-    macd = ta.macd(df_m15['close'], fast=12, slow=26, signal=9)
-    df_m15['MACD'] = macd['MACD_12_26_9']
-    df_m15['MACD_SIGNAL'] = macd['MACDs_12_26_9']
-
-    # Lấy dữ liệu 2 cây nến gần nhất (Nến vừa đóng cửa [-2] và Nến trước đó [-3])
     curr_close = df_m15['close'].iloc[-2]
     curr_open = df_m15['open'].iloc[-2]
-    curr_high = df_m15['high'].iloc[-2]
-    curr_low = df_m15['low'].iloc[-2]
-
     prev_close = df_m15['close'].iloc[-3]
     prev_open = df_m15['open'].iloc[-3]
 
-    # Kiểm tra Mô hình Nến Nhấn Chìm Tăng (Bullish Engulfing)
     is_bullish_engulfing = (prev_close < prev_open) and (curr_close > curr_open) and (curr_close > prev_open) and (curr_open < prev_close)
-
-    # Kiểm tra Mô hình Nến Nhấn Chìm Giảm (Bearish Engulfing)
     is_bearish_engulfing = (prev_close > prev_open) and (curr_close < curr_open) and (curr_close < prev_open) and (curr_open > prev_close)
 
-    # Lấy giá trị MACD & RSI mới nhất
     h1_ema50 = df_h1['EMA_50'].iloc[-1]
     m15_rsi = df_m15['RSI_14'].iloc[-2]
-
+    
     macd_curr = df_m15['MACD'].iloc[-2]
     macd_sig_curr = df_m15['MACD_SIGNAL'].iloc[-2]
     macd_prev = df_m15['MACD'].iloc[-3]
     macd_sig_prev = df_m15['MACD_SIGNAL'].iloc[-3]
 
-    # Kiểm tra Giao cắt MACD
-    macd_bullish_cross = (macd_prev < macd_sig_prev) and (macd_curr > macd_sig_curr)  # MACD cắt lên
-    macd_bearish_cross = (macd_prev > macd_sig_prev) and (macd_curr < macd_sig_curr)  # MACD cắt xuống
+    macd_bullish_cross = (macd_prev < macd_sig_prev) and (macd_curr > macd_sig_curr)
+    macd_bearish_cross = (macd_prev > macd_sig_prev) and (macd_curr < macd_sig_curr)
 
-    # 3. LOGIC ĐIỀU KIỆN LỆNH
     signal_type = None
     reasons = []
 
-    # KỊCH BẢN BUY (LONG)
-    if curr_close > h1_ema50:  # Xu hướng H1 Tăng
+    if curr_close > h1_ema50:
         if m15_rsi < 40 and (macd_bullish_cross or is_bullish_engulfing):
             signal_type = "BUY (LONG)"
             reasons.append("H1 Uptrend (Giá > EMA50)")
@@ -122,8 +103,7 @@ def analyze_advanced_setup(df_h1, df_m15):
             if macd_bullish_cross: reasons.append("MACD M15 Cắt Lên")
             if is_bullish_engulfing: reasons.append("Nến Bullish Engulfing")
 
-    # KỊCH BẢN SELL (SHORT)
-    elif curr_close < h1_ema50:  # Xu hướng H1 Giảm
+    elif curr_close < h1_ema50:
         if m15_rsi > 60 and (macd_bearish_cross or is_bearish_engulfing):
             signal_type = "SELL (SHORT)"
             reasons.append("H1 Downtrend (Giá < EMA50)")
@@ -132,19 +112,6 @@ def analyze_advanced_setup(df_h1, df_m15):
             if is_bearish_engulfing: reasons.append("Nến Bearish Engulfing")
 
     return signal_type, " + ".join(reasons), curr_close, m15_rsi
-
-# ------------------------------------------------------------------
-# 2b. MINI WEB SERVER (chỉ để Render Web Service nhận diện có port mở)
-# ------------------------------------------------------------------
-app = Flask(__name__)
-
-@app.route("/")
-def health_check():
-    return {"status": "ok", "service": "autoscreener bot đang chạy"}
-
-def run_web_server():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
 
 # ------------------------------------------------------------------
 # 3. QUÉT & ĐẨY FIREBASE
@@ -164,7 +131,6 @@ def scan_and_push_to_firebase():
             signal_type, reason, current_price, rsi = analyze_advanced_setup(df_h1, df_m15)
 
             if signal_type:
-                # Tính Stop Loss & Take Profit chuẩn R:R = 1:2
                 recent_low = df_m15['low'].tail(10).min()
                 recent_high = df_m15['high'].tail(10).max()
 
@@ -197,16 +163,12 @@ def scan_and_push_to_firebase():
         print("[ℹ️ FIREBASE] Chưa có coin nào hội tụ đủ 3 yếu tố kỹ thuật.")
 
 if __name__ == "__main__":
-    print("🔥 Đang bật Bot Quét Nâng Cao...")
-
-    # Chạy web server tối thiểu ở thread riêng để Render nhận diện có port mở
-    web_thread = threading.Thread(target=run_web_server, daemon=True)
-    web_thread.start()
-
+    print("🔥 Đang bật Bot Quét Nâng Cao (Tần suất 30s/lần)...")
     scan_and_push_to_firebase()
 
     scheduler = BackgroundScheduler()
-    scheduler.add_job(scan_and_push_to_firebase, 'interval', minutes=1)
+    # Rút ngắn chu kỳ quét xuống 30 giây
+    scheduler.add_job(scan_and_push_to_firebase, 'interval', seconds=30)
     scheduler.start()
 
     try:
