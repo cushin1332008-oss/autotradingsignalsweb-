@@ -9,6 +9,14 @@ import firebase_admin
 from firebase_admin import credentials, db
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+
+def now_vn_str():
+    """Trả về chuỗi giờ hiện tại theo múi giờ Việt Nam (UTC+7), bất kể server chạy ở đâu."""
+    return datetime.now(VN_TZ).strftime('%H:%M:%S %d/%m/%Y')
 
 # ------------------------------------------------------------------
 # 1. CẤU HÌNH FIREBASE ADMIN (giữ nguyên logic 3 cách như bản cũ)
@@ -203,6 +211,47 @@ def analyze_timeframe(df):
     }
 
 # ------------------------------------------------------------------
+# 4b. QUẢN LÝ VỐN: PHÂN LOẠI RỦI RO & KHỐI LƯỢNG VÀO LỆNH THEO % TÀI KHOẢN
+# ------------------------------------------------------------------
+# Nguyên tắc: rủi ro tối đa mỗi lệnh (risk_percent) tính trên % TÀI KHOẢN,
+# không phải % giá coin. Tín hiệu càng nhiều khung thời gian đồng thuận
+# (confluence_pct càng cao) thì được phép risk cao hơn một chút, và ngược lại.
+# Đây là khung quản trị vốn tham khảo (1-2% rule phổ biến trong trading),
+# không phải khuyến nghị đầu tư — bạn nên tự điều chỉnh theo khẩu vị rủi ro.
+RISK_TIERS = [
+    # (ngưỡng confluence_pct tối thiểu, nhãn rủi ro, % tài khoản risk mỗi lệnh)
+    (85, "Thấp", 2.0),
+    (70, "Trung bình", 1.0),
+    (0,  "Cao", 0.5),
+]
+
+def classify_risk(confluence_pct):
+    for threshold, label, risk_percent in RISK_TIERS:
+        if confluence_pct >= threshold:
+            return label, risk_percent
+    return "Cao", 0.5
+
+def calc_position_sizing(entry, stop_loss, confluence_pct):
+    """
+    Tính % tài khoản nên vào lệnh dựa trên:
+    - risk_percent: % tài khoản chấp nhận mất nếu dính Stop Loss (theo mức độ tín hiệu)
+    - khoảng cách entry -> stop loss (%)
+    Công thức: vị thế (% tài khoản) = risk_percent / khoảng_cách_SL(%) * 100
+    (Áp dụng cho spot / futures 1x, không đòn bẩy)
+    """
+    risk_label, risk_percent = classify_risk(confluence_pct)
+
+    sl_distance_pct = abs(entry - stop_loss) / entry * 100
+    if sl_distance_pct <= 0:
+        return risk_label, risk_percent, 0.0, False
+
+    position_pct = risk_percent / sl_distance_pct * 100
+    needs_leverage = position_pct > 100
+    position_pct = min(position_pct, 100.0)  # không vượt quá 100% tài khoản (không đòn bẩy)
+
+    return risk_label, risk_percent, round(position_pct, 2), needs_leverage
+
+# ------------------------------------------------------------------
 # 5. QUÉT 1 COIN QUA TẤT CẢ KHUNG THỜI GIAN & CHẤM ĐIỂM HỘI TỤ (CONFLUENCE)
 # ------------------------------------------------------------------
 def scan_symbol(symbol):
@@ -260,6 +309,10 @@ def scan_symbol(symbol):
         tp = price - (sl - price) * 2
         confluence_pct = round(bear_weight / TOTAL_WEIGHT * 100, 1)
 
+    risk_label, risk_percent, position_pct, needs_leverage = calc_position_sizing(
+        entry=price, stop_loss=sl, confluence_pct=confluence_pct
+    )
+
     return {
         "symbol": symbol,
         "signal": signal_type,
@@ -272,7 +325,11 @@ def scan_symbol(symbol):
         "confluence_pct": confluence_pct,
         "support": round(m15["support"], 6),
         "resistance": round(m15["resistance"], 6),
-        "time_str": time.strftime('%H:%M:%S %d/%m/%Y')
+        "risk_level": risk_label,             # Thấp / Trung bình / Cao
+        "risk_percent": risk_percent,          # % tài khoản chấp nhận mất nếu dính SL
+        "position_pct": position_pct,          # % tài khoản nên phân bổ vào lệnh này
+        "needs_leverage": needs_leverage,      # True nếu vị thế cần đòn bẩy mới đủ risk chuẩn
+        "time_str": now_vn_str()
     }
 
 # ------------------------------------------------------------------
@@ -292,7 +349,7 @@ def run_web_server():
 # 7. QUÉT TOÀN BỘ WATCHLIST & ĐẨY FIREBASE
 # ------------------------------------------------------------------
 def scan_and_push_to_firebase():
-    print(f"\n[🚀 SCANNING] Bắt đầu quét lúc: {time.strftime('%H:%M:%S')}...")
+    print(f"\n[🚀 SCANNING] Bắt đầu quét lúc: {now_vn_str()}...")
     watchlist = get_top_100_watchlist()
     signals_to_upload = {}
 
