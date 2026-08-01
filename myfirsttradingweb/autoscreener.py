@@ -4,7 +4,6 @@ from firebase_admin import credentials, db
 from apscheduler.schedulers.background import BackgroundScheduler
 import requests
 import pandas as pd
-import pandas_ta as ta
 import time
 
 # ------------------------------------------------------------------
@@ -13,10 +12,8 @@ import time
 secret_path = "/etc/secrets/firebase.json"
 
 if os.path.exists(secret_path):
-    # Đọc từ thư mục bảo mật của Render
     cred = credentials.Certificate(secret_path)
 else:
-    # Dự phòng khi chạy test ở máy cá nhân (nếu có file serviceAccountKey.json cùng thư mục)
     cred = credentials.Certificate("serviceAccountKey.json")
 
 firebase_admin.initialize_app(cred, {
@@ -25,7 +22,6 @@ firebase_admin.initialize_app(cred, {
 
 ref = db.reference('signals')
 
-# Danh sách Top Coin thanh khoản cao
 WATCHLIST = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "NEARUSDT", "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT"]
 BINANCE_URL = "https://api.binance.com/api/v3/klines"
 
@@ -38,7 +34,6 @@ def get_klines(symbol: str, interval: str, limit: int = 100):
             "close_time", "quote_asset_volume", "number_of_trades",
             "taker_buy_base_asset_volume", "taker_buy_quote_asset_volume", "ignore"
         ])
-        # Ép kiểu dữ liệu số
         for col in ["open", "high", "low", "close", "volume"]:
             df[col] = df[col].astype(float)
         return df
@@ -46,37 +41,39 @@ def get_klines(symbol: str, interval: str, limit: int = 100):
         return None
 
 # ------------------------------------------------------------------
+# HÀM TÍNH TOÁN CHỈ BÁO BẰNG PANDAS THUẦN (KHÔNG CẦN PANDAS-TA)
+# ------------------------------------------------------------------
+def calculate_indicators(df_h1, df_m15):
+    # Tính EMA 50 cho H1
+    df_h1['EMA_50'] = df_h1['close'].ewm(span=50, adjust=False).mean()
+
+    # Tính RSI 14 cho M15
+    delta = df_m15['close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    df_m15['RSI_14'] = 100 - (100 / (1 + rs))
+
+    # Tính MACD (12, 26, 9) cho M15
+    exp1 = df_m15['close'].ewm(span=12, adjust=False).mean()
+    exp2 = df_m15['close'].ewm(span=26, adjust=False).mean()
+    df_m15['MACD'] = exp1 - exp2
+    df_m15['MACD_SIGNAL'] = df_m15['MACD'].ewm(span=9, adjust=False).mean()
+
+# ------------------------------------------------------------------
 # 2. BỘ PHÂN TÍCH MÔ HÌNH NẾN & CHỈ BÁO NÂNG CAO
 # ------------------------------------------------------------------
 def analyze_advanced_setup(df_h1, df_m15):
-    """
-    Hàm phân tích thuật toán nâng cao: H1 EMA + M15 MACD Cross + RSI + Candle Pattern
-    """
-    # 1. TÍNH CHỈ BÁO H1
-    df_h1['EMA_50'] = ta.ema(df_h1['close'], length=50)
-    
-    # 2. TÍNH CHỈ BÁO M15
-    df_m15['RSI_14'] = ta.rsi(df_m15['close'], length=14)
-    macd = ta.macd(df_m15['close'], fast=12, slow=26, signal=9)
-    df_m15['MACD'] = macd['MACD_12_26_9']
-    df_m15['MACD_SIGNAL'] = macd['MACDs_12_26_9']
+    calculate_indicators(df_h1, df_m15)
 
-    # Lấy dữ liệu 2 cây nến gần nhất (Nến vừa đóng cửa [-2] và Nến trước đó [-3])
     curr_close = df_m15['close'].iloc[-2]
     curr_open = df_m15['open'].iloc[-2]
-    curr_high = df_m15['high'].iloc[-2]
-    curr_low = df_m15['low'].iloc[-2]
-
     prev_close = df_m15['close'].iloc[-3]
     prev_open = df_m15['open'].iloc[-3]
 
-    # Kiểm tra Mô hình Nến Nhấn Chìm Tăng (Bullish Engulfing)
     is_bullish_engulfing = (prev_close < prev_open) and (curr_close > curr_open) and (curr_close > prev_open) and (curr_open < prev_close)
-    
-    # Kiểm tra Mô hình Nến Nhấn Chìm Giảm (Bearish Engulfing)
     is_bearish_engulfing = (prev_close > prev_open) and (curr_close < curr_open) and (curr_close < prev_open) and (curr_open > prev_close)
 
-    # Lấy giá trị MACD & RSI mới nhất
     h1_ema50 = df_h1['EMA_50'].iloc[-1]
     m15_rsi = df_m15['RSI_14'].iloc[-2]
     
@@ -85,16 +82,13 @@ def analyze_advanced_setup(df_h1, df_m15):
     macd_prev = df_m15['MACD'].iloc[-3]
     macd_sig_prev = df_m15['MACD_SIGNAL'].iloc[-3]
 
-    # Kiểm tra Giao cắt MACD
-    macd_bullish_cross = (macd_prev < macd_sig_prev) and (macd_curr > macd_sig_curr) # MACD cắt lên
-    macd_bearish_cross = (macd_prev > macd_sig_prev) and (macd_curr < macd_sig_curr) # MACD cắt xuống
+    macd_bullish_cross = (macd_prev < macd_sig_prev) and (macd_curr > macd_sig_curr)
+    macd_bearish_cross = (macd_prev > macd_sig_prev) and (macd_curr < macd_sig_curr)
 
-    # 3. LOGIC ĐIỀU KIỆN LỆNH
     signal_type = None
     reasons = []
 
-    # KỊCH BẢN BUY (LONG)
-    if curr_close > h1_ema50: # Xu hướng H1 Tăng
+    if curr_close > h1_ema50:
         if m15_rsi < 40 and (macd_bullish_cross or is_bullish_engulfing):
             signal_type = "BUY (LONG)"
             reasons.append("H1 Uptrend (Giá > EMA50)")
@@ -102,8 +96,7 @@ def analyze_advanced_setup(df_h1, df_m15):
             if macd_bullish_cross: reasons.append("MACD M15 Cắt Lên")
             if is_bullish_engulfing: reasons.append("Nến Bullish Engulfing")
 
-    # KỊCH BẢN SELL (SHORT)
-    elif curr_close < h1_ema50: # Xu hướng H1 Giảm
+    elif curr_close < h1_ema50:
         if m15_rsi > 60 and (macd_bearish_cross or is_bearish_engulfing):
             signal_type = "SELL (SHORT)"
             reasons.append("H1 Downtrend (Giá < EMA50)")
@@ -131,7 +124,6 @@ def scan_and_push_to_firebase():
             signal_type, reason, current_price, rsi = analyze_advanced_setup(df_h1, df_m15)
 
             if signal_type:
-                # Tính Stop Loss & Take Profit chuẩn R:R = 1:2
                 recent_low = df_m15['low'].tail(10).min()
                 recent_high = df_m15['high'].tail(10).max()
 
