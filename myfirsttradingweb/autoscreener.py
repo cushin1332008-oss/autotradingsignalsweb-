@@ -50,7 +50,7 @@ ref = db.reference('signals')
 session = requests.Session()
 
 # ------------------------------------------------------------------
-# 2. CẤU HÌNH TELEGRAM ALERT
+# 2. CẤU HÌNH TELEGRAM ALERT (Đã thêm ATR & Hỗ trợ/Kháng cự)
 # ------------------------------------------------------------------
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
@@ -62,16 +62,19 @@ def send_telegram_alert(item):
         return
     try:
         emoji = "🟢" if "BUY" in item["signal"] else "🔴"
+        
+        # Thêm thông tin ATR và Hỗ trợ/Kháng cự vào tin nhắn Telegram
         text = (
             f"{emoji} <b>{item['symbol']}</b> — {item['signal']}\n"
             f"🕒 Khung giao dịch: <b>{item['trade_timeframe']}</b>\n\n"
             f"💰 Entry: <code>{item['entry']}</code>\n"
-            f"🛑 SL: <code>{item['stop_loss']}</code>\n"
+            f"🛑 SL (ATR): <code>{item['stop_loss']}</code>\n"
             f"🎯 TP: <code>{item['take_profit']}</code>\n"
+            f"📐 HT/KC: {item.get('support', 'N/A')} / {item.get('resistance', 'N/A')} | ATR: {item.get('atr', 'N/A')}\n"
             f"📊 RSI {item['entry_tf']}: {item['rsi_entry_tf']} | Hội tụ: {item['confluence_pct']}%\n"
             f"💵 Volume 24h: {item.get('volume_24h_fmt', 'N/A')}\n"
             f"⚖️ Risk: {item['risk_level']} ({item['risk_percent']}% TK) | "
-            f"Khối lượng đề xuất: {item['position_pct']}% TK\n"
+            f"Vol đề xuất: {item['position_pct']}% TK\n"
             f"💡 {item['reason']}\n"
             f"🕐 {item['time_str']}"
         )
@@ -225,7 +228,7 @@ def scan_symbol(symbol, volumes_map):
         key = f"{symbol}_{profile_key}"
         output[key] = {
             "symbol": symbol,
-            **signal,
+            **signal,  # Đã bao gồm atr, support, resistance từ thuật toán mới
             "risk_level": risk_label,
             "risk_percent": risk_percent,
             "position_pct": position_pct,
@@ -238,7 +241,7 @@ def scan_symbol(symbol, volumes_map):
     return output
 
 # ------------------------------------------------------------------
-# 6. MINI WEB SERVER
+# 6. MINI WEB SERVER (Dùng để keep-alive trên Render/Heroku)
 # ------------------------------------------------------------------
 app = Flask(__name__)
 
@@ -290,7 +293,7 @@ def scan_and_push_to_firebase():
     notify_new_signals(signals_to_upload)
 
 if __name__ == "__main__":
-    print("🔥 Đang bật Bot Quét Nâng Cao — 3 Khung Giao Dịch (Lướt sóng/Trung hạn/Dài hạn)...")
+    print("🔥 Đang bật Bot Quét Nâng Cao (ATR Co Giãn) — 3 Khung Giao Dịch...")
 
     web_thread = threading.Thread(target=run_web_server, daemon=True)
     web_thread.start()
