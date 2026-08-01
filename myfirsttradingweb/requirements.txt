@@ -2,4 +2,4 @@ firebase-admin
 requests
 pandas
 apscheduler
-https://github.com/twopirllc/pandas-ta/archive/refs/heads/main.zip
+https://github.com/twopirllc/pandas-ta/archive/refs/heads/development.zip
