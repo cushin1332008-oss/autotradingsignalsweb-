@@ -1,0 +1,5 @@
+firebase-admin
+requests
+pandas
+pandas-ta
+apscheduler

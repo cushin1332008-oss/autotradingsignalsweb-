@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Crypto Signal Screener Realtime</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase SDK v8 (Chạy cực kỳ ổn định & nhẹ) -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-4 sm:p-6 md:p-8">
+
+  <div class="max-w-6xl mx-auto">
+    <!-- Header Dashboard -->
+    <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-6 mb-8 border-b border-slate-800 gap-4">
+      <div>
+        <h1 class="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+          🔥 Binance Signal Screener
+        </h1>
+        <p class="text-xs sm:text-sm text-slate-400 mt-1">Hệ thống quét tín hiệu giao dịch tự động (H1 EMA + M15 MACD/RSI/Engulfing)</p>
+      </div>
+      
+      <!-- Status Badge -->
+      <div id="status-container" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-xs sm:text-sm">
+        <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+        <span id="status-text" class="text-slate-400 font-medium">Đang kết nối...</span>
+      </div>
+    </header>
+
+    <!-- Signal Cards Grid -->
+    <main>
+      <div id="signals-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <!-- Trạng thái chờ ban đầu -->
+        <div class="col-span-full text-center py-16 bg-slate-900/50 rounded-2xl border border-slate-800/80">
+          <div class="inline-block p-4 rounded-full bg-slate-800/80 mb-3 text-2xl">📡</div>
+          <p class="text-slate-400 font-medium">Đang kết nối với Firebase Realtime Database...</p>
+          <p class="text-slate-600 text-xs mt-1">Tín hiệu mới nhất sẽ xuất hiện ngay khi có Set up đạt chuẩn</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Firebase Logic Script -->
+  <script>
+    // -------------------------------------------------------------
+    // CẤU HÌNH FIREBASE DATABASE (Khu vực Châu Á)
+    // -------------------------------------------------------------
+    const firebaseConfig = {
+      databaseURL: "https://webtrade-85ca8-default-rtdb.asia-southeast1.firebasedatabase.app"
+    };
+
+    // Khởi tạo Firebase App
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+
+    const dbRef = firebase.database().ref('signals');
+    const signalsGrid = document.getElementById('signals-grid');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+
+    // -------------------------------------------------------------
+    // LẮNG NGHE DỮ LIỆU REALTIME
+    // -------------------------------------------------------------
+    dbRef.on('value', (snapshot) => {
+      // Cập nhật trạng thái Trực tuyến
+      statusDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]";
+      statusText.className = "text-emerald-400 font-medium";
+      statusText.innerText = "Trực tuyến (Realtime)";
+
+      const data = snapshot.val();
+
+      // Nếu không có tín hiệu nào trên Database
+      if (!data || Object.keys(data).length === 0) {
+        signalsGrid.innerHTML = `
+          <div class="col-span-full text-center py-16 bg-slate-900/40 rounded-2xl border border-slate-800/60">
+            <div class="inline-block p-4 rounded-full bg-slate-800/50 mb-3 text-2xl">😴</div>
+            <p class="text-slate-400 font-medium">Hiện tại chưa có Coin nào hội tụ đủ 3 điều kiện kỹ thuật.</p>
+            <p class="text-slate-600 text-xs mt-1">Bot quét nến tự động chạy 1 phút/lần để phát hiện kèo mới...</p>
+          </div>
+        `;
+        return;
+      }
+
+      // Render danh sách tín hiệu lên màn hình
+      signalsGrid.innerHTML = '';
+      
+      Object.values(data).forEach(item => {
+        const isBuy = item.signal.includes("BUY");
+        
+        // Màu sắc theo loại lệnh
+        const cardBorder = isBuy ? 'border-emerald-500/30 hover:border-emerald-500/60' : 'border-rose-500/30 hover:border-rose-500/60';
+        const badgeBg = isBuy ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+        const priceColor = isBuy ? 'text-emerald-400' : 'text-rose-400';
+
+        const cardHTML = `
+          <div class="bg-slate-900 rounded-2xl p-5 border ${cardBorder} transition-all duration-300 shadow-xl flex flex-col justify-between">
+            <div>
+              <!-- Symbol Header & Signal Type -->
+              <div class="flex justify-between items-center mb-4">
+                <div class="flex items-center gap-2">
+                  <span class="text-xl font-bold text-slate-100 tracking-wide">${item.symbol}</span>
+                  <span class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-mono">M15/H1</span>
+                </div>
+                <span class="${badgeBg} px-3 py-1 rounded-full text-xs font-bold border tracking-wide">
+                  ${item.signal}
+                </span>
+              </div>
+
+              <!-- Key Trading Prices -->
+              <div class="bg-slate-950/60 rounded-xl p-3.5 space-y-2.5 mb-4 border border-slate-800/50">
+                <div class="flex justify-between items-center text-sm">
+                  <span class="text-slate-400">Entry Price:</span>
+                  <span class="font-mono font-semibold text-slate-200">${item.entry}</span>
+                </div>
+                <div class="flex justify-between items-center text-sm">
+                  <span class="text-slate-400">Stop Loss (SL):</span>
+                  <span class="font-mono font-semibold text-rose-400">${item.stop_loss}</span>
+                </div>
+                <div class="flex justify-between items-center text-sm">
+                  <span class="text-slate-400">Take Profit (TP):</span>
+                  <span class="font-mono font-semibold text-emerald-400">${item.take_profit}</span>
+                </div>
+              </div>
+
+              <!-- Technical Indicator Stats -->
+              <div class="flex items-center justify-between text-xs text-slate-400 px-1 mb-4">
+                <span>RSI (M15): <strong class="${item.rsi_m15 < 40 ? 'text-emerald-400' : (item.rsi_m15 > 60 ? 'text-rose-400' : 'text-slate-300')}">${item.rsi_m15}</strong></span>
+                <span>R:R Ratio: <strong class="text-amber-400">1 : 2</strong></span>
+              </div>
+            </div>
+
+            <!-- Footer Reason & Time -->
+            <div class="pt-3 border-t border-slate-800/80 text-xs">
+              <p class="text-slate-300 font-normal leading-relaxed">
+                💡 <span class="text-slate-400">Lý do:</span> ${item.reason}
+              </p>
+              <div class="mt-3 flex justify-between items-center text-[11px] text-slate-500">
+                <span>Cập nhật:</span>
+                <span class="font-mono">${item.time_str}</span>
+              </div>
+            </div>
+          </div>
+        `;
+
+        signalsGrid.innerHTML += cardHTML;
+      });
+    }, (error) => {
+      // Xử lý khi kết nối thất bại
+      statusDot.className = "w-2.5 h-2.5 rounded-full bg-rose-500";
+      statusText.className = "text-rose-400 font-medium";
+      statusText.innerText = "Lỗi kết nối";
+      console.error("Firebase Error:", error);
+    });
+  </script>
+</body>
+</html>
