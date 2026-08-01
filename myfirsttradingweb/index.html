@@ -22,7 +22,7 @@
         <h1 class="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
           🔥 CuShin Signal Screener
         </h1>
-        <p class="text-xs sm:text-sm text-slate-400 mt-1">Top 100 Coin · 3 khung giao dịch riêng biệt · Trend + RSI + Hỗ trợ/Kháng cự + Fibonacci</p>
+        <p class="text-xs sm:text-sm text-slate-400 mt-1">Top 100 Coin Binance · Phân tích Đa Khung · Cắt lỗ thông minh với ATR</p>
       </div>
 
       <div id="status-container" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-xs sm:text-sm">
@@ -50,9 +50,9 @@
       💡 Ít thời gian theo dõi? Chọn <span class="text-slate-300 font-medium">"Dài hạn (H4)"</span> — tín hiệu ra ít hơn, entry rộng hơn, không cần canh liên tục.
     </p>
 
-    <!-- Disclaimer nhỏ -->
+    <!-- Disclaimer -->
     <div class="mb-6 text-[11px] sm:text-xs text-slate-500 bg-slate-900/40 border border-slate-800/60 rounded-lg px-4 py-2.5">
-      ⚠️ Tín hiệu và gợi ý khối lượng vào lệnh chỉ mang tính tham khảo dựa trên thuật toán kỹ thuật, không phải lời khuyên đầu tư. Tự chịu trách nhiệm với quyết định giao dịch của bạn.
+      ⚠️ Tín hiệu được thuật toán tính toán tự động với mức dừng lỗ co giãn theo <b>ATR (Độ biến động)</b>. Không phải lời khuyên đầu tư. Tự chịu trách nhiệm giao dịch.
     </div>
 
     <!-- Signal Cards Grid -->
@@ -60,8 +60,7 @@
       <div id="signals-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         <div class="col-span-full text-center py-16 bg-slate-900/50 rounded-2xl border border-slate-800/80">
           <div class="inline-block p-4 rounded-full bg-slate-800/80 mb-3 text-2xl">📡</div>
-          <p class="text-slate-400 font-medium">Đang kết nối với Firebase Realtime Database...</p>
-          <p class="text-slate-600 text-xs mt-1">Tín hiệu mới nhất sẽ xuất hiện ngay khi có Set up đạt chuẩn</p>
+          <p class="text-slate-400 font-medium">Đang kết nối với Database...</p>
         </div>
       </div>
     </main>
@@ -96,7 +95,6 @@
       }
     }
 
-    // Chuyển tab
     tabButtons.forEach(btn => {
       btn.addEventListener('click', () => {
         activeProfile = btn.dataset.profile;
@@ -165,7 +163,6 @@
         const cardHTML = `
           <div class="bg-slate-900 rounded-2xl p-5 border ${cardBorder} transition-all duration-300 shadow-xl flex flex-col justify-between">
             <div>
-              <!-- Symbol Header, khung giao dịch & Signal Type -->
               <div class="flex justify-between items-start mb-1">
                 <div class="flex items-center gap-2">
                   <span class="text-xl font-bold text-slate-100 tracking-wide">${item.symbol}</span>
@@ -209,9 +206,14 @@
                   <span class="text-slate-400">Hỗ trợ / Kháng cự:</span>
                   <span class="mono text-slate-300">${item.support} / ${item.resistance}</span>
                 </div>
+                <!-- New ATR Line -->
+                <div class="flex justify-between items-center text-sm">
+                  <span class="text-slate-400">ATR (Độ biến động):</span>
+                  <span class="mono text-cyan-400/80">${item.atr ? item.atr : 'N/A'}</span>
+                </div>
                 <div class="flex justify-between items-center text-sm">
                   <span class="text-slate-400">Volume 24h:</span>
-                  <span class="mono text-slate-300">${item.volume_24h_fmt || 'N/A'} USDT</span>
+                  <span class="mono text-slate-300">${item.volume_24h_fmt || 'N/A'}</span>
                 </div>
               </div>
 
