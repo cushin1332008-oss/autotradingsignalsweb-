@@ -1,20 +1,15 @@
 """
 indicators.py
 -------------
-Module dùng chung cho phân tích kỹ thuật + sinh tín hiệu theo 3 "khung giao dịch"
-(profile) riêng biệt: SCALP (M15), SWING (H1), POSITION (H4). Mỗi profile có logic
-xác nhận xu hướng bằng khung thời gian lớn hơn riêng, phù hợp với người dùng có
-quỹ thời gian theo dõi khác nhau.
-
-Được import bởi CẢ autoscreener.py (bot live) LẪN backtest.py — đảm bảo backtest
-phản ánh đúng logic bot thật đang chạy.
+Module phân tích kỹ thuật + sinh tín hiệu theo 3 profile: SCALP (M15), SWING (H1), POSITION (H4).
+Tích hợp ATR (Average True Range) để đặt Stop Loss động theo biến động thực tế của thị trường.
 """
 
 import pandas as pd
 import pandas_ta as ta
 
 # ------------------------------------------------------------------
-# KHUNG THỜI GIAN DÙNG ĐỂ PHÂN TÍCH & TRỌNG SỐ (khung lớn quan trọng hơn)
+# KHUNG THỜI GIAN & TRỌNG SỐ
 # ------------------------------------------------------------------
 TIMEFRAMES = {
     "M15": "15m",
@@ -26,7 +21,7 @@ TF_WEIGHT = {"M15": 1, "H1": 2, "H4": 3, "D1": 4}
 TOTAL_WEIGHT = sum(TF_WEIGHT.values())
 
 # ------------------------------------------------------------------
-# 3 PROFILE GIAO DỊCH — mỗi profile = 1 khung vào lệnh + khung xác nhận xu hướng riêng
+# 3 PROFILE GIAO DỊCH
 # ------------------------------------------------------------------
 TRADE_PROFILES = {
     "SCALP": {
@@ -34,7 +29,7 @@ TRADE_PROFILES = {
         "entry_tf": "M15",
         "bias_tfs": ["H1", "H4"],
         "rsi_buy": 45, "rsi_sell": 55,
-        "tolerance_pct": 0.5,   # dung sai % để coi là "giá chạm" Fib/hỗ trợ/kháng cự
+        "tolerance_pct": 0.5,
     },
     "SWING": {
         "label": "Trung hạn (H1)",
@@ -91,7 +86,7 @@ def nearest_fib_level(price, fib_levels, tolerance_pct=0.5):
     return None
 
 # ------------------------------------------------------------------
-# PHÂN TÍCH 1 KHUNG THỜI GIAN (dùng chung cho mọi entry_tf / bias_tf)
+# PHÂN TÍCH 1 KHUNG THỜI GIAN (BỔ SUNG ATR)
 # ------------------------------------------------------------------
 def analyze_timeframe(df):
     if df is None or len(df) < 60:
@@ -101,13 +96,15 @@ def analyze_timeframe(df):
     df['EMA20'] = ta.ema(df['close'], length=20)
     df['EMA50'] = ta.ema(df['close'], length=50)
     df['RSI14'] = ta.rsi(df['close'], length=14)
+    df['ATR14'] = ta.atr(df['high'], df['low'], df['close'], length=14)
 
     price = df['close'].iloc[-2]
     ema20 = df['EMA20'].iloc[-2]
     ema50 = df['EMA50'].iloc[-2]
     rsi = df['RSI14'].iloc[-2]
+    atr = df['ATR14'].iloc[-2]
 
-    if pd.isna(ema50) or pd.isna(rsi):
+    if pd.isna(ema50) or pd.isna(rsi) or pd.isna(atr):
         return None
 
     if price > ema20 > ema50:
@@ -122,13 +119,14 @@ def analyze_timeframe(df):
     return {
         "price": float(price),
         "rsi": float(rsi),
+        "atr": float(atr),
         "trend": trend,
         "support": support,
         "resistance": resistance,
     }
 
 # ------------------------------------------------------------------
-# SINH TÍN HIỆU CHO 1 PROFILE CỤ THỂ
+# SINH TÍN HIỆU CHO 1 PROFILE CỤ THỂ (DÙNG ATR ĐỂ ĐẶT SL/TP)
 # ------------------------------------------------------------------
 def generate_signal_for_profile(tf_results, profile_key):
     profile = TRADE_PROFILES[profile_key]
@@ -169,14 +167,17 @@ def generate_signal_for_profile(tf_results, profile_key):
         return None
 
     price = entry["price"]
-    if "BUY" in signal_type:
-        sl = entry["support"] * 0.998
-        tp = price + (price - sl) * 2
-    else:
-        sl = entry["resistance"] * 1.002
-        tp = price - (sl - price) * 2
+    atr_val = entry["atr"]
 
-    # Điểm hội tụ: tính trên TẤT CẢ khung đã quét được (không chỉ riêng entry+bias của profile này)
+    # Cắt lỗ động theo ATR (1.5x ATR) kết hợp vùng Hỗ trợ / Kháng cự
+    if "BUY" in signal_type:
+        sl = min(entry["support"], price - (1.5 * atr_val))
+        tp = price + (price - sl) * 2  # Risk/Reward Ratio 1:2
+    else:
+        sl = max(entry["resistance"], price + (1.5 * atr_val))
+        tp = price - (sl - price) * 2  # Risk/Reward Ratio 1:2
+
+    # Tính độ hội tụ đa khung
     bull_w = sum(TF_WEIGHT[tf] for tf, r in tf_results.items() if r["trend"] == "UP")
     bear_w = sum(TF_WEIGHT[tf] for tf, r in tf_results.items() if r["trend"] == "DOWN")
     confluence_pct = round((bull_w if "BUY" in signal_type else bear_w) / TOTAL_WEIGHT * 100, 1)
@@ -191,6 +192,7 @@ def generate_signal_for_profile(tf_results, profile_key):
         "entry": float(price),
         "stop_loss": round(float(sl), 6),
         "take_profit": round(float(tp), 6),
+        "atr": round(float(atr_val), 6),
         "reason": " + ".join(reasons),
         "rsi_entry_tf": round(float(entry["rsi"]), 2),
         "confluence_pct": confluence_pct,
@@ -199,7 +201,6 @@ def generate_signal_for_profile(tf_results, profile_key):
     }
 
 def generate_all_signals(tf_results):
-    """Chạy cả 3 profile trên cùng 1 bộ tf_results, trả về dict {profile_key: signal}."""
     signals = {}
     for key in TRADE_PROFILES:
         sig = generate_signal_for_profile(tf_results, key)
@@ -208,7 +209,7 @@ def generate_all_signals(tf_results):
     return signals
 
 # ------------------------------------------------------------------
-# QUẢN LÝ VỐN: PHÂN LOẠI RỦI RO & KHỐI LƯỢNG VÀO LỆNH THEO % TÀI KHOẢN
+# QUẢN LÝ VỐN
 # ------------------------------------------------------------------
 RISK_TIERS = [
     (85, "Thấp", 2.0),
