@@ -3,7 +3,7 @@ from firebase_admin import credentials, db
 from apscheduler.schedulers.background import BackgroundScheduler
 import requests
 import pandas as pd
-import pandas_ta as ta
+import ta
 import time
 
 # ------------------------------------------------------------------
