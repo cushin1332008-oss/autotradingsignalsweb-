@@ -2,5 +2,5 @@ firebase-admin
 apscheduler
 requests
 pandas
-pandas_ta==0.3.14b0
+pandas_ta==0.4.71b0
 flask
