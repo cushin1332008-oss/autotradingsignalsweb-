@@ -2,4 +2,3 @@ firebase-admin
 apscheduler
 requests
 pandas
-pandas-ta
