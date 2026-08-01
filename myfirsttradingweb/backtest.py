@@ -3,19 +3,7 @@ backtest.py
 -----------
 Kiểm tra độ chính xác (win rate) của thuật toán trên dữ liệu lịch sử Binance —
 CHO TỪNG KHUNG GIAO DỊCH RIÊNG (SCALP / SWING / POSITION), dùng đúng logic
-từ indicators.py mà bot live đang chạy.
-
-CÁCH DÙNG:
-    python backtest.py --profile SWING --symbols BTCUSDT,ETHUSDT --days 60
-    python backtest.py --profile ALL --symbols BTCUSDT --days 60
-
-    --profile    SCALP | SWING | POSITION | ALL (mặc định: ALL — test cả 3)
-    --symbols    danh sách coin cách nhau bằng dấu phẩy
-    --days       số ngày lịch sử để test (mặc định 60; POSITION nên test >=90 ngày
-                 vì khung H4/D1 cần nhiều thời gian hơn để có đủ mẫu tín hiệu)
-
-LƯU Ý: backtest chưa tính phí giao dịch/slippage. Kết quả quá khứ không đảm bảo
-hiệu suất tương lai — đây là công cụ tham khảo tương đối giữa các profile/coin.
+từ indicators.py mà bot live đang chạy. Tự động tương thích với chuẩn SL/TP bằng ATR mới nhất.
 """
 
 import argparse
@@ -28,9 +16,7 @@ from indicators import TRADE_PROFILES, analyze_timeframe, generate_signal_for_pr
 BINANCE_KLINES_URL = "https://api.binance.com/api/v3/klines"
 session = requests.Session()
 
-# Số nến (theo entry_tf của từng profile) tối đa chờ TP/SL trước khi coi là "hết hạn"
-DEFAULT_LOOKAHEAD = {"M15": 96, "H1": 168, "H4": 90}  # ~1 ngày / ~1 tuần / ~15 ngày
-
+DEFAULT_LOOKAHEAD = {"M15": 96, "H1": 168, "H4": 90}
 
 def fetch_full_history(symbol, interval, days):
     end_time = int(time.time() * 1000)
@@ -75,7 +61,7 @@ def simulate_outcome(entry_df, entry_index, signal_type, sl, tp, lookahead):
         else:
             hit_sl, hit_tp = high >= sl, low <= tp
 
-        if hit_sl:   # ưu tiên SL nếu cả 2 cùng chạm trong 1 nến (thận trọng)
+        if hit_sl:
             return "SL"
         if hit_tp:
             return "TP"
