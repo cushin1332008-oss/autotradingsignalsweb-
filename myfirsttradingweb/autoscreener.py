@@ -1,23 +1,43 @@
 import os
+import json
+import threading
 import firebase_admin
 from firebase_admin import credentials, db
 from apscheduler.schedulers.background import BackgroundScheduler
+from flask import Flask
 import requests
 import pandas as pd
 import pandas_ta as ta
 import time
 
 # ------------------------------------------------------------------
-# 1. CẤU HÌNH FIREBASE ADMIN (Tự động nhận diện Render Secret File)
+# 1. CẤU HÌNH FIREBASE ADMIN
+#    Thử lần lượt 3 cách, theo thứ tự ưu tiên:
+#    (a) Render Secret File tại /etc/secrets/firebase.json
+#    (b) Biến môi trường FIREBASE_CREDENTIALS chứa nguyên JSON
+#    (c) File serviceAccountKey.json cùng thư mục (chạy local)
 # ------------------------------------------------------------------
 secret_path = "/etc/secrets/firebase.json"
+env_cred = os.environ.get("FIREBASE_CREDENTIALS")
+local_path = "serviceAccountKey.json"
 
 if os.path.exists(secret_path):
-    # Đọc từ thư mục bảo mật của Render
+    print(f"[🔑 AUTH] Dùng Render Secret File: {secret_path}")
     cred = credentials.Certificate(secret_path)
+elif env_cred:
+    print("[🔑 AUTH] Dùng biến môi trường FIREBASE_CREDENTIALS")
+    cred = credentials.Certificate(json.loads(env_cred))
+elif os.path.exists(local_path):
+    print(f"[🔑 AUTH] Dùng file local: {local_path}")
+    cred = credentials.Certificate(local_path)
 else:
-    # Dự phòng khi chạy test ở máy cá nhân (nếu có file serviceAccountKey.json cùng thư mục)
-    cred = credentials.Certificate("serviceAccountKey.json")
+    raise RuntimeError(
+        "Không tìm thấy Firebase credentials ở bất kỳ đâu.\n"
+        "Trên Render: vào Environment -> Secret Files -> thêm file 'firebase.json' "
+        "(sẽ tự mount vào /etc/secrets/firebase.json), "
+        "hoặc thêm biến môi trường FIREBASE_CREDENTIALS chứa nội dung JSON của key.\n"
+        "Chạy local: đặt file serviceAccountKey.json cùng thư mục với script này."
+    )
 
 firebase_admin.initialize_app(cred, {
     'databaseURL': 'https://webtrade-85ca8-default-rtdb.asia-southeast1.firebasedatabase.app'
@@ -54,7 +74,7 @@ def analyze_advanced_setup(df_h1, df_m15):
     """
     # 1. TÍNH CHỈ BÁO H1
     df_h1['EMA_50'] = ta.ema(df_h1['close'], length=50)
-    
+
     # 2. TÍNH CHỈ BÁO M15
     df_m15['RSI_14'] = ta.rsi(df_m15['close'], length=14)
     macd = ta.macd(df_m15['close'], fast=12, slow=26, signal=9)
@@ -72,29 +92,29 @@ def analyze_advanced_setup(df_h1, df_m15):
 
     # Kiểm tra Mô hình Nến Nhấn Chìm Tăng (Bullish Engulfing)
     is_bullish_engulfing = (prev_close < prev_open) and (curr_close > curr_open) and (curr_close > prev_open) and (curr_open < prev_close)
-    
+
     # Kiểm tra Mô hình Nến Nhấn Chìm Giảm (Bearish Engulfing)
     is_bearish_engulfing = (prev_close > prev_open) and (curr_close < curr_open) and (curr_close < prev_open) and (curr_open > prev_close)
 
     # Lấy giá trị MACD & RSI mới nhất
     h1_ema50 = df_h1['EMA_50'].iloc[-1]
     m15_rsi = df_m15['RSI_14'].iloc[-2]
-    
+
     macd_curr = df_m15['MACD'].iloc[-2]
     macd_sig_curr = df_m15['MACD_SIGNAL'].iloc[-2]
     macd_prev = df_m15['MACD'].iloc[-3]
     macd_sig_prev = df_m15['MACD_SIGNAL'].iloc[-3]
 
     # Kiểm tra Giao cắt MACD
-    macd_bullish_cross = (macd_prev < macd_sig_prev) and (macd_curr > macd_sig_curr) # MACD cắt lên
-    macd_bearish_cross = (macd_prev > macd_sig_prev) and (macd_curr < macd_sig_curr) # MACD cắt xuống
+    macd_bullish_cross = (macd_prev < macd_sig_prev) and (macd_curr > macd_sig_curr)  # MACD cắt lên
+    macd_bearish_cross = (macd_prev > macd_sig_prev) and (macd_curr < macd_sig_curr)  # MACD cắt xuống
 
     # 3. LOGIC ĐIỀU KIỆN LỆNH
     signal_type = None
     reasons = []
 
     # KỊCH BẢN BUY (LONG)
-    if curr_close > h1_ema50: # Xu hướng H1 Tăng
+    if curr_close > h1_ema50:  # Xu hướng H1 Tăng
         if m15_rsi < 40 and (macd_bullish_cross or is_bullish_engulfing):
             signal_type = "BUY (LONG)"
             reasons.append("H1 Uptrend (Giá > EMA50)")
@@ -103,7 +123,7 @@ def analyze_advanced_setup(df_h1, df_m15):
             if is_bullish_engulfing: reasons.append("Nến Bullish Engulfing")
 
     # KỊCH BẢN SELL (SHORT)
-    elif curr_close < h1_ema50: # Xu hướng H1 Giảm
+    elif curr_close < h1_ema50:  # Xu hướng H1 Giảm
         if m15_rsi > 60 and (macd_bearish_cross or is_bearish_engulfing):
             signal_type = "SELL (SHORT)"
             reasons.append("H1 Downtrend (Giá < EMA50)")
@@ -112,6 +132,19 @@ def analyze_advanced_setup(df_h1, df_m15):
             if is_bearish_engulfing: reasons.append("Nến Bearish Engulfing")
 
     return signal_type, " + ".join(reasons), curr_close, m15_rsi
+
+# ------------------------------------------------------------------
+# 2b. MINI WEB SERVER (chỉ để Render Web Service nhận diện có port mở)
+# ------------------------------------------------------------------
+app = Flask(__name__)
+
+@app.route("/")
+def health_check():
+    return {"status": "ok", "service": "autoscreener bot đang chạy"}
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
 
 # ------------------------------------------------------------------
 # 3. QUÉT & ĐẨY FIREBASE
@@ -165,6 +198,11 @@ def scan_and_push_to_firebase():
 
 if __name__ == "__main__":
     print("🔥 Đang bật Bot Quét Nâng Cao...")
+
+    # Chạy web server tối thiểu ở thread riêng để Render nhận diện có port mở
+    web_thread = threading.Thread(target=run_web_server, daemon=True)
+    web_thread.start()
+
     scan_and_push_to_firebase()
 
     scheduler = BackgroundScheduler()
