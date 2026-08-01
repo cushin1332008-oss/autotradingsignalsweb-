@@ -1,5 +1,5 @@
 firebase-admin
 requests
 pandas
-pandas-ta
 apscheduler
+git+https://github.com/twopirllc/pandas-ta.git@development
