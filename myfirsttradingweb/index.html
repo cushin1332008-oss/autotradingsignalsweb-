@@ -4,12 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Crypto Signal Screener Realtime</title>
-  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Firebase SDK v8 (Chạy cực kỳ ổn định & nhẹ) -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-  <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     body { font-family: 'Inter', sans-serif; }
@@ -20,20 +17,38 @@
 
   <div class="max-w-6xl mx-auto">
     <!-- Header Dashboard -->
-    <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-6 mb-8 border-b border-slate-800 gap-4">
+    <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-6 mb-6 border-b border-slate-800 gap-4">
       <div>
         <h1 class="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
           🔥 CuShin Signal Screener
         </h1>
-        <p class="text-xs sm:text-sm text-slate-400 mt-1">Quét Top 100 Coin đa khung H4/H1/M15 · Trend + RSI + Hỗ trợ/Kháng cự + Fibonacci</p>
+        <p class="text-xs sm:text-sm text-slate-400 mt-1">Top 100 Coin · 3 khung giao dịch riêng biệt · Trend + RSI + Hỗ trợ/Kháng cự + Fibonacci</p>
       </div>
 
-      <!-- Status Badge -->
       <div id="status-container" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-xs sm:text-sm">
         <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
         <span id="status-text" class="text-slate-400 font-medium">Đang kết nối...</span>
       </div>
     </header>
+
+    <!-- Tabs lọc theo khung giao dịch -->
+    <div class="flex flex-wrap gap-2 mb-6" id="profile-tabs">
+      <button data-profile="ALL" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold border transition-colors bg-cyan-500/10 text-cyan-400 border-cyan-500/30">
+        Tất cả
+      </button>
+      <button data-profile="SCALP" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold border transition-colors bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700">
+        ⚡ Lướt sóng (M15)
+      </button>
+      <button data-profile="SWING" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold border transition-colors bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700">
+        📈 Trung hạn (H1)
+      </button>
+      <button data-profile="POSITION" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold border transition-colors bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700">
+        🐢 Dài hạn (H4)
+      </button>
+    </div>
+    <p class="text-[11px] sm:text-xs text-slate-500 mb-4">
+      💡 Ít thời gian theo dõi? Chọn <span class="text-slate-300 font-medium">"Dài hạn (H4)"</span> — tín hiệu ra ít hơn, entry rộng hơn, không cần canh liên tục.
+    </p>
 
     <!-- Disclaimer nhỏ -->
     <div class="mb-6 text-[11px] sm:text-xs text-slate-500 bg-slate-900/40 border border-slate-800/60 rounded-lg px-4 py-2.5">
@@ -43,7 +58,6 @@
     <!-- Signal Cards Grid -->
     <main>
       <div id="signals-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        <!-- Trạng thái chờ ban đầu -->
         <div class="col-span-full text-center py-16 bg-slate-900/50 rounded-2xl border border-slate-800/80">
           <div class="inline-block p-4 rounded-full bg-slate-800/80 mb-3 text-2xl">📡</div>
           <p class="text-slate-400 font-medium">Đang kết nối với Firebase Realtime Database...</p>
@@ -53,26 +67,27 @@
     </main>
   </div>
 
-  <!-- Firebase Logic Script -->
   <script>
-    // -------------------------------------------------------------
-    // CẤU HÌNH FIREBASE DATABASE (Khu vực Châu Á)
-    // -------------------------------------------------------------
     const firebaseConfig = {
       databaseURL: "https://webtrade-85ca8-default-rtdb.asia-southeast1.firebasedatabase.app"
     };
-
-    // Khởi tạo Firebase App
-    if (!firebase.apps.length) {
-      firebase.initializeApp(firebaseConfig);
-    }
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
 
     const dbRef = firebase.database().ref('signals');
     const signalsGrid = document.getElementById('signals-grid');
     const statusDot = document.getElementById('status-dot');
     const statusText = document.getElementById('status-text');
+    const tabButtons = document.querySelectorAll('.tab-btn');
 
-    // Màu theo mức độ rủi ro
+    let currentData = null;
+    let activeProfile = "ALL";
+
+    const PROFILE_META = {
+      SCALP:    { icon: "⚡", short: "M15", color: "text-cyan-400" },
+      SWING:    { icon: "📈", short: "H1",  color: "text-amber-400" },
+      POSITION: { icon: "🐢", short: "H4",  color: "text-violet-400" },
+    };
+
     function riskColorClasses(riskLevel) {
       switch (riskLevel) {
         case "Thấp":       return { text: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" };
@@ -81,43 +96,68 @@
       }
     }
 
-    // -------------------------------------------------------------
-    // LẮNG NGHE DỮ LIỆU REALTIME
-    // -------------------------------------------------------------
+    // Chuyển tab
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        activeProfile = btn.dataset.profile;
+        tabButtons.forEach(b => {
+          b.classList.remove('bg-cyan-500/10', 'text-cyan-400', 'border-cyan-500/30');
+          b.classList.add('bg-slate-900', 'text-slate-400', 'border-slate-800');
+        });
+        btn.classList.remove('bg-slate-900', 'text-slate-400', 'border-slate-800');
+        btn.classList.add('bg-cyan-500/10', 'text-cyan-400', 'border-cyan-500/30');
+        render(currentData);
+      });
+    });
+
     dbRef.on('value', (snapshot) => {
-      // Cập nhật trạng thái Trực tuyến
       statusDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]";
       statusText.className = "text-emerald-400 font-medium";
       statusText.innerText = "Trực tuyến (Realtime)";
+      currentData = snapshot.val();
+      render(currentData);
+    }, (error) => {
+      statusDot.className = "w-2.5 h-2.5 rounded-full bg-rose-500";
+      statusText.className = "text-rose-400 font-medium";
+      statusText.innerText = "Lỗi kết nối";
+      console.error("Firebase Error:", error);
+    });
 
-      const data = snapshot.val();
-
-      // Nếu không có tín hiệu nào trên Database
+    function render(data) {
       if (!data || Object.keys(data).length === 0) {
         signalsGrid.innerHTML = `
           <div class="col-span-full text-center py-16 bg-slate-900/40 rounded-2xl border border-slate-800/60">
             <div class="inline-block p-4 rounded-full bg-slate-800/50 mb-3 text-2xl">😴</div>
             <p class="text-slate-400 font-medium">Hiện tại chưa có Coin nào hội tụ đủ điều kiện kỹ thuật.</p>
-            <p class="text-slate-600 text-xs mt-1">Bot quét Top 100 coin đa khung thời gian, tự động cập nhật mỗi 5 phút...</p>
-          </div>
-        `;
+            <p class="text-slate-600 text-xs mt-1">Bot quét Top 100 coin, tự động cập nhật mỗi 5 phút...</p>
+          </div>`;
         return;
       }
 
-      // Render danh sách tín hiệu lên màn hình
+      let items = Object.values(data);
+      if (activeProfile !== "ALL") {
+        items = items.filter(item => item.profile === activeProfile);
+      }
+
+      if (items.length === 0) {
+        signalsGrid.innerHTML = `
+          <div class="col-span-full text-center py-16 bg-slate-900/40 rounded-2xl border border-slate-800/60">
+            <div class="inline-block p-4 rounded-full bg-slate-800/50 mb-3 text-2xl">🔍</div>
+            <p class="text-slate-400 font-medium">Chưa có tín hiệu nào ở khung giao dịch này.</p>
+            <p class="text-slate-600 text-xs mt-1">Thử chọn "Tất cả" hoặc đợi lần quét kế tiếp.</p>
+          </div>`;
+        return;
+      }
+
+      items.sort((a, b) => (b.confluence_pct || 0) - (a.confluence_pct || 0));
+
       signalsGrid.innerHTML = '';
-
-      // Sắp xếp theo % hội tụ giảm dần (tín hiệu mạnh nhất lên đầu)
-      const sortedItems = Object.values(data).sort((a, b) => (b.confluence_pct || 0) - (a.confluence_pct || 0));
-
-      sortedItems.forEach(item => {
+      items.forEach(item => {
         const isBuy = item.signal.includes("BUY");
-
-        // Màu sắc theo loại lệnh
         const cardBorder = isBuy ? 'border-emerald-500/30 hover:border-emerald-500/60' : 'border-rose-500/30 hover:border-rose-500/60';
         const badgeBg = isBuy ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20';
-
         const risk = riskColorClasses(item.risk_level);
+        const meta = PROFILE_META[item.profile] || { icon: "•", short: item.entry_tf, color: "text-slate-400" };
         const leverageNote = item.needs_leverage
           ? `<span class="text-amber-400" title="Cần đòn bẩy để đạt đúng mức risk chuẩn">⚡ cần đòn bẩy</span>`
           : '';
@@ -125,14 +165,18 @@
         const cardHTML = `
           <div class="bg-slate-900 rounded-2xl p-5 border ${cardBorder} transition-all duration-300 shadow-xl flex flex-col justify-between">
             <div>
-              <!-- Symbol Header & Signal Type -->
-              <div class="flex justify-between items-center mb-4">
+              <!-- Symbol Header, khung giao dịch & Signal Type -->
+              <div class="flex justify-between items-start mb-1">
                 <div class="flex items-center gap-2">
                   <span class="text-xl font-bold text-slate-100 tracking-wide">${item.symbol}</span>
-                  <span class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-mono">H4/H1/M15</span>
                 </div>
                 <span class="${badgeBg} px-3 py-1 rounded-full text-xs font-bold border tracking-wide">
                   ${item.signal}
+                </span>
+              </div>
+              <div class="mb-4">
+                <span class="inline-flex items-center gap-1 text-[11px] font-semibold ${meta.color} bg-slate-950/60 px-2 py-1 rounded-md border border-slate-800">
+                  ${meta.icon} ${item.trade_timeframe} · Entry ${item.entry_tf}
                 </span>
               </div>
 
@@ -187,14 +231,12 @@
                 </div>
               </div>
 
-              <!-- Technical Indicator Stats -->
               <div class="flex items-center justify-between text-xs text-slate-400 px-1 mb-4">
-                <span>RSI (M15): <strong class="${item.rsi_m15 < 40 ? 'text-emerald-400' : (item.rsi_m15 > 60 ? 'text-rose-400' : 'text-slate-300')}">${item.rsi_m15}</strong></span>
+                <span>RSI (${item.entry_tf}): <strong class="${item.rsi_entry_tf < 40 ? 'text-emerald-400' : (item.rsi_entry_tf > 60 ? 'text-rose-400' : 'text-slate-300')}">${item.rsi_entry_tf}</strong></span>
                 <span>R:R Ratio: <strong class="text-amber-400">1 : 2</strong></span>
               </div>
             </div>
 
-            <!-- Footer Reason & Time -->
             <div class="pt-3 border-t border-slate-800/80 text-xs">
               <p class="text-slate-300 font-normal leading-relaxed">
                 💡 <span class="text-slate-400">Lý do:</span> ${item.reason}
@@ -206,16 +248,9 @@
             </div>
           </div>
         `;
-
         signalsGrid.innerHTML += cardHTML;
       });
-    }, (error) => {
-      // Xử lý khi kết nối thất bại
-      statusDot.className = "w-2.5 h-2.5 rounded-full bg-rose-500";
-      statusText.className = "text-rose-400 font-medium";
-      statusText.innerText = "Lỗi kết nối";
-      console.error("Firebase Error:", error);
-    });
+    }
   </script>
 </body>
 </html>
