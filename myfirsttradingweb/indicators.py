@@ -1,15 +1,16 @@
 """
 indicators.py
 -------------
-Module phân tích kỹ thuật + sinh tín hiệu theo 3 profile: SCALP (M15), SWING (H1), POSITION (H4).
-Tích hợp ATR (Average True Range) để đặt Stop Loss động theo biến động thực tế của thị trường.
+Module dùng chung cho phân tích kỹ thuật + sinh tín hiệu theo 3 "khung giao dịch"
+(profile) riêng biệt: SCALP (M15), SWING (H1), POSITION (H4). 
+Đã tích hợp ATR (Average True Range) để Stop Loss co giãn theo biến động thực tế của coin.
 """
 
 import pandas as pd
 import pandas_ta as ta
 
 # ------------------------------------------------------------------
-# KHUNG THỜI GIAN & TRỌNG SỐ
+# KHUNG THỜI GIAN DÙNG ĐỂ PHÂN TÍCH & TRỌNG SỐ (khung lớn quan trọng hơn)
 # ------------------------------------------------------------------
 TIMEFRAMES = {
     "M15": "15m",
@@ -86,7 +87,7 @@ def nearest_fib_level(price, fib_levels, tolerance_pct=0.5):
     return None
 
 # ------------------------------------------------------------------
-# PHÂN TÍCH 1 KHUNG THỜI GIAN (BỔ SUNG ATR)
+# PHÂN TÍCH 1 KHUNG THỜI GIAN (Có tính ATR)
 # ------------------------------------------------------------------
 def analyze_timeframe(df):
     if df is None or len(df) < 60:
@@ -126,7 +127,7 @@ def analyze_timeframe(df):
     }
 
 # ------------------------------------------------------------------
-# SINH TÍN HIỆU CHO 1 PROFILE CỤ THỂ (DÙNG ATR ĐỂ ĐẶT SL/TP)
+# SINH TÍN HIỆU CHO 1 PROFILE CỤ THỂ (Dùng ATR để tối ưu SL)
 # ------------------------------------------------------------------
 def generate_signal_for_profile(tf_results, profile_key):
     profile = TRADE_PROFILES[profile_key]
@@ -167,17 +168,21 @@ def generate_signal_for_profile(tf_results, profile_key):
         return None
 
     price = entry["price"]
-    atr_val = entry["atr"]
-
-    # Cắt lỗ động theo ATR (1.5x ATR) kết hợp vùng Hỗ trợ / Kháng cự
+    atr = entry["atr"]
+    
+    # Tính toán SL theo biến động (ATR) kết hợp Hỗ trợ/Kháng cự
     if "BUY" in signal_type:
-        sl = min(entry["support"], price - (1.5 * atr_val))
-        tp = price + (price - sl) * 2  # Risk/Reward Ratio 1:2
+        sl = entry["support"] - (1.0 * atr)  # Cách hỗ trợ 1 khoảng ATR
+        if sl >= price:                      # Dự phòng lỗi nến giật
+            sl = price - (1.5 * atr)
+        tp = price + (price - sl) * 2
     else:
-        sl = max(entry["resistance"], price + (1.5 * atr_val))
-        tp = price - (sl - price) * 2  # Risk/Reward Ratio 1:2
+        sl = entry["resistance"] + (1.0 * atr) # Cách kháng cự 1 khoảng ATR
+        if sl <= price:
+            sl = price + (1.5 * atr)
+        tp = price - (sl - price) * 2
 
-    # Tính độ hội tụ đa khung
+    # Điểm hội tụ đa khung
     bull_w = sum(TF_WEIGHT[tf] for tf, r in tf_results.items() if r["trend"] == "UP")
     bear_w = sum(TF_WEIGHT[tf] for tf, r in tf_results.items() if r["trend"] == "DOWN")
     confluence_pct = round((bull_w if "BUY" in signal_type else bear_w) / TOTAL_WEIGHT * 100, 1)
@@ -192,7 +197,7 @@ def generate_signal_for_profile(tf_results, profile_key):
         "entry": float(price),
         "stop_loss": round(float(sl), 6),
         "take_profit": round(float(tp), 6),
-        "atr": round(float(atr_val), 6),
+        "atr": round(float(atr), 6),
         "reason": " + ".join(reasons),
         "rsi_entry_tf": round(float(entry["rsi"]), 2),
         "confluence_pct": confluence_pct,
@@ -209,7 +214,7 @@ def generate_all_signals(tf_results):
     return signals
 
 # ------------------------------------------------------------------
-# QUẢN LÝ VỐN
+# QUẢN LÝ VỐN: RỦI RO & KHỐI LƯỢNG (Giữ nguyên)
 # ------------------------------------------------------------------
 RISK_TIERS = [
     (85, "Thấp", 2.0),
