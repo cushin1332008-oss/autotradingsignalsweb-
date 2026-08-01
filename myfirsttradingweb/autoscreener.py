@@ -1,28 +1,24 @@
+import os
 import firebase_admin
 from firebase_admin import credentials, db
 from apscheduler.schedulers.background import BackgroundScheduler
 import requests
 import pandas as pd
-import ta
+import pandas_ta as ta
 import time
 
 # ------------------------------------------------------------------
-# 1. CẤU HÌNH FIREBASE ADMIN
+# 1. CẤU HÌNH FIREBASE ADMIN (Tự động nhận diện Render Secret File)
 # ------------------------------------------------------------------
-firebase_config_dict = {
-  "type": "service_account",
-  "project_id": "webtrade-85ca8",
-  "private_key_id": "e352ab30b941661085686fd608e9148b3fe81c81",
-  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCegD/1D7Iul7BU\nAdYJGwd6QAHlZLXa7R7mdLfHFJCg3o22Hqc+PJ7s4ZhRILG3V88JJ+akVuzfZvG3\n3+v52VAwhCK61TwbIzMB5ZQCisEj1VKLBJSaFZnQDgAGtZ7OIG7WG3Btt0N+lW4P\nPEGy7hduhsJm5CG38gI/iv3tF6id732h5i+jX/Fa74/2o1OqwXKNh916TvMV2jxJ\nFk4q74IzTInHcRmHR/DoO5QkiU51s5Q3MLCfllryS/l21LYSwLg5vWGX+H/xGJrQ\nH1Po2TPZ9JExdOxQBFXruD2qOPxx2kV73SJh6LzSXocZu30dekM9CwhkixYRferW\n0HZI5BLzAgMBAAECggEABjGazjfDzcBNuqqrs4Vj4GoZ6N3roVd8yqKq/9OU50Rr\nIz/FZ1A1IaqbKiht6W08AO6XO7rN3NkH/xh3/zZ3xL2VIdntVF4mwx82jnbfn0fZ\nxubx66eGcDPr2ldEkmeADUvbM95ie9LZDy1an+Rf9Ai+Fgk6LBb/8X27+IThKPLA\nJQjmK5X69udRXbzNyfnK1bbVdI8CAywwj473ujMzyybIj048SVwDmHB2tt07BSvY\n0knNPT80NKj/ZWP1p82afTlhYZkMeI/Kq5EWhd0FWCb2aPGssYEcTEkU3PNc660t\nVVxIZVYOKvFjcy0E2uvy8Vj62mif1Lkc6pLnNYkWoQKBgQDPdBY9vAwyKAH2Ts6Y\ngOCte/BilLB5aH6yOZXDOSfR1aMYvKYn0QbwxDagc8YkSNLa0vs5Ytd5oqegdO/g\nNyPPzoruucSDmiSl1Y8Nfdu5S+OcebihZ+EdMW0TznCy7acN32ceivnTwwakAmsq\nVpP9qrSHYHSg1eVzA0gSouGDUQKBgQDDl5EMi3KuBGsGNSilS06LvY7EOqO3VcWG\nSYbPzQBeEAjVS0m8Rfe70nH+dBdxgdugfNZADdHT1HhCYJ8O2/ykKaK+imSPUjqB\nlobeqc+tBJbY8BrkVDcIm14kKFRx/yRsCXTwldBFn7s1gKAwZXUHkPI5Gu5ZgkYJ\nTQDdKDq5AwKBgEYQWOqktiHCbVc4qoHLFRbCgx9oRGncpt2eoTv787zkwF68aAmO\niR+LxT9Pmp3qknwhQYPSJCAKlT6V/+Xj+Y5XnYie6QXha3sus0/FMA5W2Rqh6X9p\nzBfF96b21A06Qm9nAjbIjTO97GI8BuGXuAe2PZ5zLzCazRGZDCBvLmbhAoGAVs2E\nLPoSKhKB4N5krH7wW+oDWyjfEXU6VS96aeyD9jrNgMOJ9MlkeXGa759b7B8CdoYQ\nm5rGfWk0+dhhnrmYtM5ZkJBgso5+spY4QsdACHwZ6isc9Co/xk0ViZxwZasi4eOM\nh10lclDCR6tO7EuKlZIJPbirAQRkyqnm8T9yWDsCgYB40KNENP1Zl0MREV+LLXaS\nHqYL+GNwYYds6rmOXOEOLhAZUDIhLBJzzmAYeAnWLZtHsQbtSeF10mWVRgbBkkSm\nuSHDZmDx0xaozZJdGFZ0WSJCU8fLtAmx80Vx3UCAMfK27k6Wn64ePvsmT+nHQAI5\nia1koyLL6xdVaBKE5NjHTA==\n-----END PRIVATE KEY-----\n",
-  "client_email": "firebase-adminsdk-fbsvc@webtrade-85ca8.iam.gserviceaccount.com",
-  "client_id": "102991661149337777004",
-  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-  "token_uri": "https://oauth2.googleapis.com/token",
-  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40webtrade-85ca8.iam.gserviceaccount.com"
-}
+secret_path = "/etc/secrets/firebase.json"
 
-cred = credentials.Certificate(firebase_config_dict)
+if os.path.exists(secret_path):
+    # Đọc từ thư mục bảo mật của Render
+    cred = credentials.Certificate(secret_path)
+else:
+    # Dự phòng khi chạy test ở máy cá nhân (nếu có file serviceAccountKey.json cùng thư mục)
+    cred = credentials.Certificate("serviceAccountKey.json")
+
 firebase_admin.initialize_app(cred, {
     'databaseURL': 'https://webtrade-85ca8-default-rtdb.asia-southeast1.firebasedatabase.app'
 })
