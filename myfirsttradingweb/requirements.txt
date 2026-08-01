@@ -2,4 +2,4 @@ firebase-admin
 requests
 pandas
 apscheduler
-pandas-ta==0.3.14b0
+https://github.com/cdgriffith/Box/files/6064069/pandas_ta-0.3.14b0-py3-none-any.whl
