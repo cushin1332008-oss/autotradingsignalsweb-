@@ -73,7 +73,7 @@ def send_telegram_alert(item):
             f"📐 HT/KC: {item.get('support', 'N/A')} / {item.get('resistance', 'N/A')} | ATR: {item.get('atr', 'N/A')}\n"
             f"📊 RSI {item['entry_tf']}: {item['rsi_entry_tf']} | Hội tụ: {item['confluence_pct']}%\n"
             f"💵 Volume 24h: {item.get('volume_24h_fmt', 'N/A')}\n"
-            f"⚖️ Risk: {item['risk_level']} ({item['risk_percent']}% TK nếu dính SL)\n"
+            f"⚖️ {item['confidence_level']} | Risk: {item['risk_percent']}% TK nếu dính SL\n"
             f"🏦 Margin đề xuất: {item['margin_pct']}% TK\n"
             f"📈 Đòn bẩy đề xuất: <b>{item['leverage']}x</b>{leverage_note}\n"
             f"💡 {item['reason']}\n"
@@ -109,6 +109,14 @@ MIN_VOLUME_USDT = float(os.environ.get("MIN_VOLUME_USDT", "5000000"))
 MAX_COINS = int(os.environ.get("MAX_COINS", "100"))
 # Số coin quét song song cùng lúc — tăng lên nếu Render còn dư tài nguyên, giảm nếu bị lỗi rate-limit.
 SCAN_WORKERS = int(os.environ.get("SCAN_WORKERS", "8"))
+
+# Risk% cố định mỗi lệnh (bạn chọn theo khẩu vị — mặc định 1.5%, giữa khoảng 1-2% bạn muốn)
+# và % tài khoản dùng làm ký quỹ mỗi lệnh. Đổi qua Environment trên Render, không cần sửa code.
+RISK_PERCENT = float(os.environ.get("RISK_PERCENT", "1.5"))
+MARGIN_PCT_TARGET = float(os.environ.get("MARGIN_PCT_TARGET", "8.0"))
+# Khai báo vốn thực (USDT) để bot tính margin/notional ra số tiền cụ thể và tự nâng đòn bẩy
+# khi vốn nhỏ không đủ đạt khối lượng lệnh tối thiểu sàn yêu cầu. Để 0 nếu chỉ cần tính theo %.
+ACCOUNT_BALANCE_USDT = float(os.environ.get("ACCOUNT_BALANCE_USDT", "0"))
 
 FALLBACK_WATCHLIST = [
     "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
@@ -236,18 +244,16 @@ def scan_symbol(symbol, volumes_map):
     output = {}
 
     for profile_key, signal in all_signals.items():
-        risk_label, risk_percent, margin_pct, leverage, leverage_capped = calc_position_sizing(
-            entry=signal["entry"], stop_loss=signal["stop_loss"], confluence_pct=signal["confluence_pct"]
+        sizing = calc_position_sizing(
+            entry=signal["entry"], stop_loss=signal["stop_loss"], confluence_pct=signal["confluence_pct"],
+            profile_key=profile_key, risk_percent=RISK_PERCENT, margin_pct_target=MARGIN_PCT_TARGET,
+            account_balance=ACCOUNT_BALANCE_USDT
         )
         key = f"{symbol}_{profile_key}"
         output[key] = {
             "symbol": symbol,
             **signal,
-            "risk_level": risk_label,
-            "risk_percent": risk_percent,
-            "margin_pct": margin_pct,
-            "leverage": leverage,
-            "leverage_capped": leverage_capped,
+            **sizing,
             "volume_24h": round(volume_24h, 0),
             "volume_24h_fmt": format_volume(volume_24h),
             "time_str": now_vn_str()
@@ -268,6 +274,8 @@ def health_check():
         "min_volume_usdt": MIN_VOLUME_USDT,
         "max_coins": MAX_COINS,
         "scan_workers": SCAN_WORKERS,
+        "risk_percent": RISK_PERCENT,
+        "margin_pct_target": MARGIN_PCT_TARGET,
         "telegram_enabled": bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID),
         "profiles": list(TRADE_PROFILES.keys()),
     }
