@@ -87,11 +87,11 @@
       POSITION: { icon: "🐢", short: "H4",  color: "text-violet-400" },
     };
 
-    function riskColorClasses(riskLevel) {
-      switch (riskLevel) {
-        case "Thấp":       return { text: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" };
-        case "Trung bình": return { text: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/20" };
-        default:           return { text: "text-rose-400",    bg: "bg-rose-500/10",    border: "border-rose-500/20" };
+    function riskColorClasses(confidenceLevel) {
+      switch (confidenceLevel) {
+        case "Tin cậy cao":       return { text: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" };
+        case "Tin cậy trung bình": return { text: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/20" };
+        default:                   return { text: "text-rose-400",    bg: "bg-rose-500/10",    border: "border-rose-500/20" };
       }
     }
 
@@ -154,10 +154,10 @@
         const isBuy = item.signal.includes("BUY");
         const cardBorder = isBuy ? 'border-emerald-500/30 hover:border-emerald-500/60' : 'border-rose-500/30 hover:border-rose-500/60';
         const badgeBg = isBuy ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20';
-        const risk = riskColorClasses(item.risk_level);
+        const risk = riskColorClasses(item.confidence_level);
         const meta = PROFILE_META[item.profile] || { icon: "•", short: item.entry_tf, color: "text-slate-400" };
         const leverageCapNote = item.leverage_capped
-          ? `<span class="text-amber-400" title="Đòn bẩy đã bị giới hạn ở trần an toàn — risk thực tế sẽ thấp hơn mức chuẩn">🛡️ đã giới hạn trần</span>`
+          ? `<span class="text-amber-400" title="Đòn bẩy cần thiết vượt trần an toàn của khung này — risk thực tế nếu dính SL có thể CAO HƠN mức hiển thị, cân nhắc kỹ">⚠️ vượt trần khung này</span>`
           : '';
 
         const cardHTML = `
@@ -220,12 +220,16 @@
               <!-- Position Sizing / Risk Box -->
               <div class="${risk.bg} ${risk.border} border rounded-xl p-3.5 mb-4">
                 <div class="flex justify-between items-center text-xs mb-1.5">
-                  <span class="text-slate-400">Mức rủi ro tín hiệu:</span>
-                  <span class="${risk.text} font-bold">${item.risk_level}</span>
+                  <span class="text-slate-400">Độ tin cậy tín hiệu:</span>
+                  <span class="${risk.text} font-bold">${item.confidence_level}</span>
                 </div>
                 <div class="flex justify-between items-center text-xs mb-1.5">
-                  <span class="text-slate-400">Risk / lệnh (nếu dính SL):</span>
-                  <span class="mono ${risk.text} font-semibold">${item.risk_percent}% tài khoản</span>
+                  <span class="text-slate-400">Nếu dính SL, mất:</span>
+                  <span class="mono text-rose-400 font-semibold">${item.risk_percent}% tài khoản</span>
+                </div>
+                <div class="flex justify-between items-center text-xs mb-1.5">
+                  <span class="text-slate-400">Nếu chạm TP, lời:</span>
+                  <span class="mono text-emerald-400 font-semibold">~${(item.risk_percent * (Math.abs(item.take_profit - item.entry) / Math.abs(item.entry - item.stop_loss))).toFixed(2)}% tài khoản</span>
                 </div>
                 <div class="flex justify-between items-center text-xs mb-1.5">
                   <span class="text-slate-400">Margin đề xuất:</span>
@@ -235,6 +239,13 @@
                   <span class="text-slate-400">Đòn bẩy đề xuất:</span>
                   <span class="mono ${risk.text} font-bold">${item.leverage}x ${leverageCapNote}</span>
                 </div>
+                ${item.margin_usdt !== null && item.margin_usdt !== undefined ? `
+                <div class="flex justify-between items-center text-xs mt-1.5 pt-1.5 border-t border-slate-700/40">
+                  <span class="text-slate-400">Ký quỹ / Khối lượng lệnh:</span>
+                  <span class="mono ${risk.text} font-semibold">${item.margin_usdt} / ${item.notional_usdt} USDT</span>
+                </div>` : ''}
+                ${item.min_notional_adjusted ? `
+                <div class="text-[10px] text-amber-400 mt-1">⚡ Đã nâng đòn bẩy để đạt khối lượng lệnh tối thiểu sàn yêu cầu</div>` : ''}
               </div>
 
               <div class="flex items-center justify-between text-xs text-slate-400 px-1 mb-4">
