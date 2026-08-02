@@ -4,9 +4,11 @@ indicators.py
 Module dùng chung cho phân tích kỹ thuật + sinh tín hiệu theo 3 "khung giao dịch"
 (profile) riêng biệt: SCALP (M15), SWING (H1), POSITION (H4).
 Tích hợp ATR (Average True Range) để Stop Loss co giãn theo biến động thực tế của coin,
-và tính đòn bẩy đề xuất cụ thể dựa trên nguyên tắc giới hạn margin an toàn mỗi lệnh.
+và tính đòn bẩy đề xuất cụ thể dựa trên RISK% CỐ ĐỊNH do người dùng chọn (không tự giảm
+theo độ mạnh tín hiệu), phù hợp với người giao dịch chấp nhận rủi ro cao hơn.
 """
 
+import os
 import pandas as pd
 import pandas_ta as ta
 
@@ -21,6 +23,10 @@ TIMEFRAMES = {
 }
 TF_WEIGHT = {"M15": 1, "H1": 2, "H4": 3, "D1": 4}
 TOTAL_WEIGHT = sum(TF_WEIGHT.values())
+
+# Tỷ lệ Risk:Reward — quyết định TP cách entry bao xa so với SL.
+# Mặc định 2.0 (rủi ro 1 ăn 2), có thể chỉnh qua biến môi trường RR_RATIO trên Render.
+RR_RATIO = float(os.environ.get("RR_RATIO", "2.0"))
 
 # ------------------------------------------------------------------
 # 3 PROFILE GIAO DỊCH
@@ -171,17 +177,17 @@ def generate_signal_for_profile(tf_results, profile_key):
     price = entry["price"]
     atr = entry["atr"]
 
-    # Tính SL theo biến động (ATR) kết hợp Hỗ trợ/Kháng cự
+    # Tính SL theo biến động (ATR) kết hợp Hỗ trợ/Kháng cự, TP theo tỷ lệ RR_RATIO cấu hình được
     if "BUY" in signal_type:
         sl = entry["support"] - (1.0 * atr)
         if sl >= price:
             sl = price - (1.5 * atr)
-        tp = price + (price - sl) * 2
+        tp = price + (price - sl) * RR_RATIO
     else:
         sl = entry["resistance"] + (1.0 * atr)
         if sl <= price:
             sl = price + (1.5 * atr)
-        tp = price - (sl - price) * 2
+        tp = price - (sl - price) * RR_RATIO
 
     bull_w = sum(TF_WEIGHT[tf] for tf, r in tf_results.items() if r["trend"] == "UP")
     bear_w = sum(TF_WEIGHT[tf] for tf, r in tf_results.items() if r["trend"] == "DOWN")
@@ -214,31 +220,49 @@ def generate_all_signals(tf_results):
     return signals
 
 # ------------------------------------------------------------------
-# QUẢN LÝ VỐN: RỦI RO, MARGIN & ĐÒN BẨY ĐỀ XUẤT CỤ THỂ
+# QUẢN LÝ VỐN: RISK% CỐ ĐỊNH (theo lựa chọn của bạn) + MARGIN & ĐÒN BẨY ĐỀ XUẤT
 # ------------------------------------------------------------------
-# Nguyên tắc 3 bước:
-#  1) risk_percent  = % TÀI KHOẢN chấp nhận mất nếu dính Stop Loss (theo độ mạnh tín hiệu)
-#  2) margin_pct    = % TÀI KHOẢN thực sự bỏ ra làm margin cho lệnh này (giới hạn an toàn,
-#                     KHÔNG bao giờ dồn hết vốn vào 1 lệnh dù tín hiệu mạnh cỡ nào)
-#  3) leverage      = đòn bẩy cần dùng để notional position đạt đúng risk chuẩn với margin đó
-#                     leverage = notional_pct / margin_pct
-#     Tín hiệu càng mạnh (risk_percent cao hơn) → được phép dùng margin lớn hơn 1 chút,
-#     nên đòn bẩy cần thiết thường THẤP hơn so với tín hiệu yếu cùng khoảng cách SL.
-RISK_TIERS = [
-    # (ngưỡng confluence_pct, nhãn, risk_percent % TK nếu dính SL, margin_pct % TK dùng làm ký quỹ)
-    (85, "Thấp", 2.0, 12.0),
-    (70, "Trung bình", 1.0, 8.0),
-    (0,  "Cao", 0.5, 5.0),
-]
+# Khác với bản trước (tự giảm risk khi tín hiệu yếu), giờ risk_percent CỐ ĐỊNH theo
+# đúng mức bạn chấp nhận (mặc định 1.5%, giữa khoảng 1-2% bạn nói) cho MỌI tín hiệu,
+# không phân biệt mạnh/yếu. Độ mạnh tín hiệu (confluence_pct) giờ chỉ dùng để hiển thị
+# "độ tin cậy" tham khảo, KHÔNG còn tự động thu hẹp risk nữa.
+#
+# LƯU Ý QUAN TRỌNG: vì risk% giữ cố định bất kể tín hiệu mạnh/yếu, những tín hiệu có
+# khoảng cách entry→SL hẹp (do ATR thấp) sẽ cần ĐÒN BẨY CAO HƠN mới đạt đúng risk% đó.
+# Đòn bẩy càng cao, biên độ "wick" chịu được trước khi bị thanh lý càng nhỏ — đây là rủi ro
+# thật ngoài con số % risk trên lý thuyết, không phải rủi ro có thể loại bỏ bằng công thức.
+RISK_PERCENT_DEFAULT = float(os.environ.get("RISK_PERCENT", "1.5"))       # % tài khoản risk mỗi lệnh
+MARGIN_PCT_TARGET_DEFAULT = float(os.environ.get("MARGIN_PCT_TARGET", "8.0"))  # % tài khoản dùng làm ký quỹ
 
-MAX_SAFE_LEVERAGE = 20   # trần đòn bẩy đề xuất — không đề xuất vượt mức này dù công thức ra cao hơn
-LEVERAGE_STEPS = [1, 2, 3, 5, 10, 15, 20, 25, 50, 75, 100]  # các mức đòn bẩy phổ biến trên sàn
+# Khung đòn bẩy riêng theo từng khung giao dịch (timeframe) — khung nhỏ (M15) có SL
+# co giãn theo ATR hẹp hơn nên tự nhiên cần đòn bẩy cao hơn mới đạt đúng risk_percent;
+# khung lớn (H4) có SL rộng hơn nên cần đòn bẩy thấp hơn dù risk% giữ nguyên.
+# Chỉnh trực tiếp các số này nếu muốn khung khác (VD: BingX giới hạn theo từng cặp coin,
+# tự sàn sẽ cắt xuống mức cho phép nếu bot đề xuất vượt mức, không lỗi gì cả).
+LEVERAGE_RANGE_BY_PROFILE = {
+    "SCALP":    (50, 200),   # M15 — biến động ngắn hạn, SL hẹp
+    "SWING":    (30, 125),   # H1
+    "POSITION": (20, 75),    # H4 — biến động rộng hơn, SL xa hơn
+}
+DEFAULT_LEVERAGE_RANGE = (20, 100)
 
-def classify_risk(confluence_pct):
-    for threshold, label, risk_percent, margin_pct in RISK_TIERS:
-        if confluence_pct >= threshold:
-            return label, risk_percent, margin_pct
-    return "Cao", 0.5, 5.0
+# Số dư tài khoản THỰC (USDT) — khai báo để bot tính ra số tiền ký quỹ cụ thể (USDT) và
+# tự nâng đòn bẩy khi cần để đạt khối lượng lệnh tối thiểu sàn yêu cầu với vốn nhỏ.
+# Để 0 nếu chỉ muốn tính theo %, không cần số tiền cụ thể.
+ACCOUNT_BALANCE_USDT = float(os.environ.get("ACCOUNT_BALANCE_USDT", "0"))
+# Khối lượng lệnh tối thiểu (USDT) sàn yêu cầu — BingX thường ~2-5 USDT tùy cặp,
+# để giá trị an toàn hơn (5) làm mặc định, bạn có thể chỉnh theo cặp mình hay đánh.
+MIN_NOTIONAL_USDT = float(os.environ.get("MIN_NOTIONAL_USDT", "5.0"))
+
+LEVERAGE_STEPS = [1, 2, 3, 5, 10, 15, 20, 25, 30, 50, 75, 100, 125, 150, 200]  # mức đòn bẩy phổ biến trên sàn
+
+def classify_confidence(confluence_pct):
+    """Chỉ dùng để HIỂN THỊ độ tin cậy tín hiệu — KHÔNG còn dùng để tự giảm risk%."""
+    if confluence_pct >= 85:
+        return "Tin cậy cao"
+    if confluence_pct >= 70:
+        return "Tin cậy trung bình"
+    return "Tin cậy thấp"
 
 def snap_leverage(raw_leverage):
     """Làm tròn lên mức đòn bẩy phổ biến gần nhất mà sàn thường hỗ trợ (5x, 10x, 20x...)."""
@@ -247,27 +271,68 @@ def snap_leverage(raw_leverage):
             return step
     return LEVERAGE_STEPS[-1]
 
-def calc_position_sizing(entry, stop_loss, confluence_pct):
+def calc_position_sizing(entry, stop_loss, confluence_pct, profile_key,
+                          risk_percent=None, margin_pct_target=None, account_balance=None):
     """
-    Trả về: risk_label, risk_percent, margin_pct, leverage, leverage_capped
-    - margin_pct: % tài khoản nên bỏ ra làm ký quỹ cho lệnh này
-    - leverage: đòn bẩy đề xuất (đã làm tròn theo mức phổ biến, trần MAX_SAFE_LEVERAGE)
-    - leverage_capped: True nếu đòn bẩy CẦN để đạt đúng risk chuẩn vượt trần an toàn
-      (nghĩa là nếu dùng đúng leverage đề xuất, risk thực tế sẽ THẤP HƠN risk_percent — an toàn hơn,
-      không phải rủi ro hơn — nhưng bạn có thể cân nhắc bỏ qua lệnh này nếu muốn risk đúng chuẩn)
+    Trả về dict:
+    - confidence_level: nhãn độ tin cậy tín hiệu (chỉ để hiển thị)
+    - risk_percent, margin_pct: % tài khoản
+    - leverage: đòn bẩy đề xuất, đã kẹp trong khung riêng của profile (VD SCALP: 50-200x)
+    - leverage_capped: True nếu công thức ra leverage CAO HƠN trần của profile (đã kẹp xuống
+      trần — risk thực tế khi đó sẽ CAO HƠN risk_percent bạn chọn, vì không đủ đòn bẩy để
+      đạt đúng risk% mong muốn với margin đã định — cân nhắc kỹ trước khi vào lệnh này)
+    - margin_usdt, notional_usdt: số tiền cụ thể (USDT) NẾU bạn khai báo ACCOUNT_BALANCE_USDT,
+      None nếu không khai báo
+    - min_notional_adjusted: True nếu đòn bẩy đã được nâng lên để đạt khối lượng lệnh tối thiểu
+      sàn yêu cầu (áp dụng khi vốn nhỏ khiến margin quá ít USDT)
     """
-    risk_label, risk_percent, margin_pct = classify_risk(confluence_pct)
+    risk_percent = risk_percent if risk_percent is not None else RISK_PERCENT_DEFAULT
+    margin_pct = margin_pct_target if margin_pct_target is not None else MARGIN_PCT_TARGET_DEFAULT
+    account_balance = account_balance if account_balance is not None else ACCOUNT_BALANCE_USDT
+    confidence_label = classify_confidence(confluence_pct)
+    min_lev, max_lev = LEVERAGE_RANGE_BY_PROFILE.get(profile_key, DEFAULT_LEVERAGE_RANGE)
 
     sl_distance_pct = abs(entry - stop_loss) / entry * 100
     if sl_distance_pct <= 0:
-        return risk_label, risk_percent, margin_pct, 1.0, False
+        return {
+            "confidence_level": confidence_label, "risk_percent": risk_percent,
+            "margin_pct": margin_pct, "leverage": min_lev, "leverage_capped": False,
+            "margin_usdt": None, "notional_usdt": None, "min_notional_adjusted": False,
+        }
 
-    # % tài khoản cần "phơi nhiễm" (notional) để đúng risk chuẩn nếu giao dịch không đòn bẩy (1x)
+    # % tài khoản cần "phơi nhiễm" (notional) để đúng risk_percent nếu không dùng đòn bẩy (1x)
     notional_pct = risk_percent / sl_distance_pct * 100
+    raw_leverage = notional_pct / margin_pct if margin_pct > 0 else min_lev
 
-    raw_leverage = notional_pct / margin_pct if margin_pct > 0 else 1.0
     leverage = snap_leverage(raw_leverage)
-    leverage_capped = raw_leverage > MAX_SAFE_LEVERAGE
-    leverage = min(leverage, MAX_SAFE_LEVERAGE) if leverage_capped else leverage
+    leverage_capped = raw_leverage > max_lev
+    leverage = max(min_lev, min(leverage, max_lev))  # kẹp trong khung riêng của profile
 
-    return risk_label, risk_percent, round(margin_pct, 2), leverage, leverage_capped
+    margin_usdt = None
+    notional_usdt = None
+    min_notional_adjusted = False
+
+    # Nếu có khai báo vốn thực, kiểm tra xem margin quy ra USDT có đủ khối lượng lệnh tối thiểu
+    # sàn yêu cầu không — vốn nhỏ thường cần đòn bẩy cao hơn mới mở được lệnh hợp lệ.
+    if account_balance and account_balance > 0:
+        margin_usdt = round(account_balance * margin_pct / 100, 2)
+        notional_usdt = round(margin_usdt * leverage, 2)
+        if margin_usdt > 0 and notional_usdt < MIN_NOTIONAL_USDT:
+            needed_leverage = MIN_NOTIONAL_USDT / margin_usdt
+            adjusted = snap_leverage(needed_leverage)
+            adjusted = min(adjusted, max_lev)
+            if adjusted > leverage:
+                leverage = adjusted
+                min_notional_adjusted = True
+            notional_usdt = round(margin_usdt * leverage, 2)
+
+    return {
+        "confidence_level": confidence_label,
+        "risk_percent": risk_percent,
+        "margin_pct": round(margin_pct, 2),
+        "leverage": leverage,
+        "leverage_capped": leverage_capped,
+        "margin_usdt": margin_usdt,
+        "notional_usdt": notional_usdt,
+        "min_notional_adjusted": min_notional_adjusted,
+    }
