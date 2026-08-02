@@ -52,7 +52,7 @@
 
     <!-- Disclaimer -->
     <div class="mb-6 text-[11px] sm:text-xs text-slate-500 bg-slate-900/40 border border-slate-800/60 rounded-lg px-4 py-2.5">
-      ⚠️ Tín hiệu được thuật toán tính toán tự động với mức dừng lỗ co giãn theo <b>ATR (Độ biến động)</b>. Không phải lời khuyên đầu tư. Tự chịu trách nhiệm giao dịch.
+      ⚠️ Tín hiệu được thuật toán tính toán tự động với mức dừng lỗ co giãn theo <b>ATR (Độ biến động)</b> và đòn bẩy đề xuất dựa trên nguyên tắc giới hạn margin an toàn. Giao dịch đòn bẩy có rủi ro mất vốn nhanh hơn giao dịch spot — đây không phải lời khuyên đầu tư, tự chịu trách nhiệm với quyết định giao dịch của bạn.
     </div>
 
     <!-- Signal Cards Grid -->
@@ -156,8 +156,8 @@
         const badgeBg = isBuy ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20';
         const risk = riskColorClasses(item.risk_level);
         const meta = PROFILE_META[item.profile] || { icon: "•", short: item.entry_tf, color: "text-slate-400" };
-        const leverageNote = item.needs_leverage
-          ? `<span class="text-amber-400" title="Cần đòn bẩy để đạt đúng mức risk chuẩn">⚡ cần đòn bẩy</span>`
+        const leverageCapNote = item.leverage_capped
+          ? `<span class="text-amber-400" title="Đòn bẩy đã bị giới hạn ở trần an toàn — risk thực tế sẽ thấp hơn mức chuẩn">🛡️ đã giới hạn trần</span>`
           : '';
 
         const cardHTML = `
@@ -227,9 +227,13 @@
                   <span class="text-slate-400">Risk / lệnh (nếu dính SL):</span>
                   <span class="mono ${risk.text} font-semibold">${item.risk_percent}% tài khoản</span>
                 </div>
+                <div class="flex justify-between items-center text-xs mb-1.5">
+                  <span class="text-slate-400">Margin đề xuất:</span>
+                  <span class="mono ${risk.text} font-semibold">${item.margin_pct}% tài khoản</span>
+                </div>
                 <div class="flex justify-between items-center text-xs">
-                  <span class="text-slate-400">Khối lượng đề xuất:</span>
-                  <span class="mono ${risk.text} font-bold">${item.position_pct}% tài khoản ${leverageNote}</span>
+                  <span class="text-slate-400">Đòn bẩy đề xuất:</span>
+                  <span class="mono ${risk.text} font-bold">${item.leverage}x ${leverageCapNote}</span>
                 </div>
               </div>
 
