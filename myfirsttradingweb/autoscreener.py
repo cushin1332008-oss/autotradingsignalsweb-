@@ -113,7 +113,7 @@ SCAN_WORKERS = int(os.environ.get("SCAN_WORKERS", "8"))
 # Risk% cố định mỗi lệnh (bạn chọn theo khẩu vị — mặc định 1.5%, giữa khoảng 1-2% bạn muốn)
 # và % tài khoản dùng làm ký quỹ mỗi lệnh. Đổi qua Environment trên Render, không cần sửa code.
 RISK_PERCENT = float(os.environ.get("RISK_PERCENT", "1.5"))
-MARGIN_PCT_TARGET = float(os.environ.get("MARGIN_PCT_TARGET", "8.0"))
+MARGIN_PCT_ANCHOR = float(os.environ.get("MARGIN_PCT_ANCHOR", "8.0"))  # điểm neo ước tính ban đầu, KHÔNG phải margin cố định
 # Khai báo vốn thực (USDT) để bot tính margin/notional ra số tiền cụ thể và tự nâng đòn bẩy
 # khi vốn nhỏ không đủ đạt khối lượng lệnh tối thiểu sàn yêu cầu. Để 0 nếu chỉ cần tính theo %.
 ACCOUNT_BALANCE_USDT = float(os.environ.get("ACCOUNT_BALANCE_USDT", "0"))
@@ -246,7 +246,7 @@ def scan_symbol(symbol, volumes_map):
     for profile_key, signal in all_signals.items():
         sizing = calc_position_sizing(
             entry=signal["entry"], stop_loss=signal["stop_loss"], confluence_pct=signal["confluence_pct"],
-            profile_key=profile_key, risk_percent=RISK_PERCENT, margin_pct_target=MARGIN_PCT_TARGET,
+            profile_key=profile_key, risk_percent=RISK_PERCENT, margin_pct_anchor=MARGIN_PCT_ANCHOR,
             account_balance=ACCOUNT_BALANCE_USDT
         )
         key = f"{symbol}_{profile_key}"
@@ -275,7 +275,7 @@ def health_check():
         "max_coins": MAX_COINS,
         "scan_workers": SCAN_WORKERS,
         "risk_percent": RISK_PERCENT,
-        "margin_pct_target": MARGIN_PCT_TARGET,
+        "margin_pct_anchor": MARGIN_PCT_ANCHOR,
         "telegram_enabled": bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID),
         "profiles": list(TRADE_PROFILES.keys()),
     }
