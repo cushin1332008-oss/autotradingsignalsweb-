@@ -30,6 +30,9 @@ TOTAL_WEIGHT = sum(TF_WEIGHT.values())
 # Chỉnh qua biến môi trường RR_MIN / RR_MAX trên Render nếu muốn đổi biên độ.
 RR_MIN = float(os.environ.get("RR_MIN", "1.2"))
 RR_MAX = float(os.environ.get("RR_MAX", "3.5"))
+# Ngưỡng R:R tối thiểu để 1 tín hiệu được coi là đáng giao dịch — dưới 1:1 nghĩa là
+# lời tiềm năng THẤP HƠN rủi ro, cần thắng >50% lệnh mới hòa vốn, không đáng hiện ra.
+MIN_ACCEPTABLE_RR = float(os.environ.get("MIN_ACCEPTABLE_RR", "1.0"))
 
 def dynamic_rr_ratio(confluence_pct):
     """
@@ -230,9 +233,9 @@ def generate_signal_for_profile(tf_results, profile_key):
     # R:R THỰC TẾ sau khi đã chặn theo cấu trúc giá — có thể thấp hoặc cao hơn rr_target ban đầu
     actual_rr = round(abs(tp - price) / risk_distance, 2) if risk_distance > 0 else rr_target
 
-    # Nếu vùng cản quá gần khiến R:R thực tế xuống dưới ngưỡng hợp lý tối thiểu (0.5),
+    # Nếu vùng cản quá gần khiến R:R thực tế xuống dưới ngưỡng chấp nhận được,
     # kèo này coi như không đủ hấp dẫn để giao dịch — bỏ qua thay vì trả về 1 tín hiệu tệ.
-    if actual_rr < 0.5:
+    if actual_rr < MIN_ACCEPTABLE_RR:
         return None
 
     return {
