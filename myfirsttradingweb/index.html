@@ -250,7 +250,7 @@
 
               <div class="flex items-center justify-between text-xs text-slate-400 px-1 mb-4">
                 <span>RSI (${item.entry_tf}): <strong class="${item.rsi_entry_tf < 40 ? 'text-emerald-400' : (item.rsi_entry_tf > 60 ? 'text-rose-400' : 'text-slate-300')}">${item.rsi_entry_tf}</strong></span>
-                <span>R:R Ratio: <strong class="text-amber-400">1 : 2</strong></span>
+                <span>R:R Ratio: <strong class="text-amber-400">1 : ${item.rr_ratio}</strong></span>
               </div>
             </div>
 
