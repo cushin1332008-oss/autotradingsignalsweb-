@@ -69,7 +69,7 @@ def send_telegram_alert(item):
             f"🕒 Khung giao dịch: <b>{item['trade_timeframe']}</b>\n\n"
             f"💰 Entry: <code>{item['entry']}</code>\n"
             f"🛑 SL (ATR): <code>{item['stop_loss']}</code>\n"
-            f"🎯 TP: <code>{item['take_profit']}</code>\n"
+            f"🎯 TP: <code>{item['take_profit']}</code>  (R:R 1:{item['rr_ratio']})\n"
             f"📐 HT/KC: {item.get('support', 'N/A')} / {item.get('resistance', 'N/A')} | ATR: {item.get('atr', 'N/A')}\n"
             f"📊 RSI {item['entry_tf']}: {item['rsi_entry_tf']} | Hội tụ: {item['confluence_pct']}%\n"
             f"💵 Volume 24h: {item.get('volume_24h_fmt', 'N/A')}\n"
