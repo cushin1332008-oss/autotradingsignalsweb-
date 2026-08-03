@@ -24,9 +24,23 @@ TIMEFRAMES = {
 TF_WEIGHT = {"M15": 1, "H1": 2, "H4": 3, "D1": 4}
 TOTAL_WEIGHT = sum(TF_WEIGHT.values())
 
-# Tỷ lệ Risk:Reward — quyết định TP cách entry bao xa so với SL.
-# Mặc định 2.0 (rủi ro 1 ăn 2), có thể chỉnh qua biến môi trường RR_RATIO trên Render.
-RR_RATIO = float(os.environ.get("RR_RATIO", "2.0"))
+# Tỷ lệ Risk:Reward giờ LINH HOẠT thay vì cố định — nội suy giữa RR_MIN (tín hiệu yếu,
+# chốt lời sớm cho chắc) và RR_MAX (tín hiệu mạnh, nhiều khung đồng thuận, để TP chạy xa hơn),
+# đồng thời bị chặn lại bởi vùng hỗ trợ/kháng cự "rộng" phía trước (xem generate_signal_for_profile).
+# Chỉnh qua biến môi trường RR_MIN / RR_MAX trên Render nếu muốn đổi biên độ.
+RR_MIN = float(os.environ.get("RR_MIN", "1.2"))
+RR_MAX = float(os.environ.get("RR_MAX", "3.5"))
+
+def dynamic_rr_ratio(confluence_pct):
+    """
+    Nội suy tuyến tính R:R theo độ hội tụ đa khung (confluence_pct):
+    - confluence càng thấp (tín hiệu yếu, ít khung đồng thuận) → R:R gần RR_MIN
+    - confluence càng cao (tín hiệu mạnh, nhiều khung đồng thuận) → R:R gần RR_MAX
+    Khoảng chuẩn hoá 30-100% dựa trên phạm vi confluence_pct thực tế bot thường đạt được.
+    """
+    lo, hi = 30.0, 100.0
+    t = max(0.0, min(1.0, (confluence_pct - lo) / (hi - lo)))
+    return RR_MIN + (RR_MAX - RR_MIN) * t
 
 # ------------------------------------------------------------------
 # 3 PROFILE GIAO DỊCH
@@ -122,7 +136,10 @@ def analyze_timeframe(df):
     else:
         trend = "SIDEWAYS"
 
-    support, resistance = find_support_resistance(df)
+    support, resistance = find_support_resistance(df, lookback=50)
+    # Vùng hỗ trợ/kháng cự "rộng" hơn (nhìn xa hơn trong lịch sử) — dùng để chặn TP không
+    # đặt vượt quá 1 vùng cản lớn phía trước, giữ R:R linh hoạt nhưng vẫn bám cấu trúc giá thực tế.
+    support_wide, resistance_wide = find_support_resistance(df, lookback=min(150, len(df) - 5))
 
     return {
         "price": float(price),
@@ -131,6 +148,8 @@ def analyze_timeframe(df):
         "trend": trend,
         "support": support,
         "resistance": resistance,
+        "support_wide": support_wide,
+        "resistance_wide": resistance_wide,
     }
 
 # ------------------------------------------------------------------
@@ -177,21 +196,44 @@ def generate_signal_for_profile(tf_results, profile_key):
     price = entry["price"]
     atr = entry["atr"]
 
-    # Tính SL theo biến động (ATR) kết hợp Hỗ trợ/Kháng cự, TP theo tỷ lệ RR_RATIO cấu hình được
+    # Tính SL theo biến động (ATR) kết hợp Hỗ trợ/Kháng cự
     if "BUY" in signal_type:
         sl = entry["support"] - (1.0 * atr)
         if sl >= price:
             sl = price - (1.5 * atr)
-        tp = price + (price - sl) * RR_RATIO
     else:
         sl = entry["resistance"] + (1.0 * atr)
         if sl <= price:
             sl = price + (1.5 * atr)
-        tp = price - (sl - price) * RR_RATIO
 
+    # Độ hội tụ đa khung — tính TRƯỚC để dùng làm cơ sở nội suy R:R linh hoạt
     bull_w = sum(TF_WEIGHT[tf] for tf, r in tf_results.items() if r["trend"] == "UP")
     bear_w = sum(TF_WEIGHT[tf] for tf, r in tf_results.items() if r["trend"] == "DOWN")
     confluence_pct = round((bull_w if "BUY" in signal_type else bear_w) / TOTAL_WEIGHT * 100, 1)
+
+    # R:R mục tiêu ban đầu — nội suy theo độ tin cậy tín hiệu (KHÔNG còn cố định 1:2 nữa)
+    rr_target = dynamic_rr_ratio(confluence_pct)
+    risk_distance = abs(price - sl)
+
+    if "BUY" in signal_type:
+        tp = price + risk_distance * rr_target
+        # Chặn TP không vượt quá vùng kháng cự RỘNG phía trước (trừ hao 0.15% làm buffer an toàn)
+        resistance_cap = entry["resistance_wide"] * 0.9985
+        if resistance_cap > price:  # chỉ chặn nếu vùng cản đó thực sự còn ở phía trước, chưa bị vượt qua
+            tp = min(tp, resistance_cap)
+    else:
+        tp = price - risk_distance * rr_target
+        support_cap = entry["support_wide"] * 1.0015
+        if support_cap < price:
+            tp = max(tp, support_cap)
+
+    # R:R THỰC TẾ sau khi đã chặn theo cấu trúc giá — có thể thấp hoặc cao hơn rr_target ban đầu
+    actual_rr = round(abs(tp - price) / risk_distance, 2) if risk_distance > 0 else rr_target
+
+    # Nếu vùng cản quá gần khiến R:R thực tế xuống dưới ngưỡng hợp lý tối thiểu (0.5),
+    # kèo này coi như không đủ hấp dẫn để giao dịch — bỏ qua thay vì trả về 1 tín hiệu tệ.
+    if actual_rr < 0.5:
+        return None
 
     return {
         "profile": profile_key,
@@ -203,6 +245,7 @@ def generate_signal_for_profile(tf_results, profile_key):
         "entry": float(price),
         "stop_loss": round(float(sl), 6),
         "take_profit": round(float(tp), 6),
+        "rr_ratio": actual_rr,
         "atr": round(float(atr), 6),
         "reason": " + ".join(reasons),
         "rsi_entry_tf": round(float(entry["rsi"]), 2),
