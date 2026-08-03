@@ -272,22 +272,27 @@ def snap_leverage(raw_leverage):
     return LEVERAGE_STEPS[-1]
 
 def calc_position_sizing(entry, stop_loss, confluence_pct, profile_key,
-                          risk_percent=None, margin_pct_target=None, account_balance=None):
+                          risk_percent=None, margin_pct_anchor=None, account_balance=None):
     """
     Trả về dict:
     - confidence_level: nhãn độ tin cậy tín hiệu (chỉ để hiển thị)
-    - risk_percent, margin_pct: % tài khoản
+    - risk_percent: % tài khoản chấp nhận mất nếu dính SL (cố định theo cấu hình của bạn)
     - leverage: đòn bẩy đề xuất, đã kẹp trong khung riêng của profile (VD SCALP: 50-200x)
-    - leverage_capped: True nếu công thức ra leverage CAO HƠN trần của profile (đã kẹp xuống
-      trần — risk thực tế khi đó sẽ CAO HƠN risk_percent bạn chọn, vì không đủ đòn bẩy để
-      đạt đúng risk% mong muốn với margin đã định — cân nhắc kỹ trước khi vào lệnh này)
+    - margin_pct: % tài khoản dùng làm ký quỹ — TÍNH LẠI theo leverage cuối cùng, nên sẽ
+      THAY ĐỔI theo từng lệnh: đòn bẩy càng cao (khung nhỏ, SL hẹp) → margin càng THẤP;
+      đòn bẩy càng thấp (khung lớn, SL rộng) → margin cần cao hơn để giữ đúng risk_percent.
+    - leverage_capped: True nếu đòn bẩy CẦN vượt trần của profile (đã kẹp xuống trần —
+      risk thực tế khi đó sẽ CAO HƠN risk_percent bạn chọn, vì không đủ đòn bẩy để đạt
+      đúng risk% mong muốn — cân nhắc kỹ trước khi vào lệnh này)
     - margin_usdt, notional_usdt: số tiền cụ thể (USDT) NẾU bạn khai báo ACCOUNT_BALANCE_USDT,
       None nếu không khai báo
     - min_notional_adjusted: True nếu đòn bẩy đã được nâng lên để đạt khối lượng lệnh tối thiểu
       sàn yêu cầu (áp dụng khi vốn nhỏ khiến margin quá ít USDT)
     """
     risk_percent = risk_percent if risk_percent is not None else RISK_PERCENT_DEFAULT
-    margin_pct = margin_pct_target if margin_pct_target is not None else MARGIN_PCT_TARGET_DEFAULT
+    # margin_pct_anchor CHỈ dùng làm điểm khởi đầu để ước tính đòn bẩy hợp lý ban đầu,
+    # KHÔNG phải giá trị margin cuối cùng — margin thực sẽ được tính lại bên dưới.
+    margin_anchor = margin_pct_anchor if margin_pct_anchor is not None else MARGIN_PCT_TARGET_DEFAULT
     account_balance = account_balance if account_balance is not None else ACCOUNT_BALANCE_USDT
     confidence_label = classify_confidence(confluence_pct)
     min_lev, max_lev = LEVERAGE_RANGE_BY_PROFILE.get(profile_key, DEFAULT_LEVERAGE_RANGE)
@@ -296,17 +301,27 @@ def calc_position_sizing(entry, stop_loss, confluence_pct, profile_key,
     if sl_distance_pct <= 0:
         return {
             "confidence_level": confidence_label, "risk_percent": risk_percent,
-            "margin_pct": margin_pct, "leverage": min_lev, "leverage_capped": False,
+            "margin_pct": margin_anchor, "leverage": min_lev, "leverage_capped": False,
             "margin_usdt": None, "notional_usdt": None, "min_notional_adjusted": False,
         }
 
-    # % tài khoản cần "phơi nhiễm" (notional) để đúng risk_percent nếu không dùng đòn bẩy (1x)
+    # % tài khoản cần "phơi nhiễm" (notional) để đúng risk_percent, bất kể dùng đòn bẩy nào —
+    # đây là con số CỐ ĐỊNH theo risk_percent và khoảng cách SL, không đổi theo profile.
     notional_pct = risk_percent / sl_distance_pct * 100
-    raw_leverage = notional_pct / margin_pct if margin_pct > 0 else min_lev
 
+    # Ước tính đòn bẩy khởi điểm dựa trên margin neo (anchor), rồi kẹp vào khung riêng
+    # của profile (VD SCALP 50-200x, POSITION 20-75x) — đây là bước quyết định leverage cuối cùng.
+    raw_leverage = notional_pct / margin_anchor if margin_anchor > 0 else min_lev
     leverage = snap_leverage(raw_leverage)
     leverage_capped = raw_leverage > max_lev
-    leverage = max(min_lev, min(leverage, max_lev))  # kẹp trong khung riêng của profile
+    leverage = max(min_lev, min(leverage, max_lev))
+
+    # QUAN TRỌNG: sau khi đã chốt leverage theo khung của profile, TÍNH LẠI margin_pct
+    # tương ứng = notional_pct / leverage. Đây là bước sửa lỗi margin luôn cố định 8% —
+    # giờ margin sẽ tự nhỏ đi khi đòn bẩy cao (M15+200x) và tự lớn hơn khi đòn bẩy thấp
+    # (H4+20x), luôn giữ đúng risk_percent mục tiêu.
+    margin_pct = notional_pct / leverage if leverage > 0 else margin_anchor
+    margin_pct = min(margin_pct, 100.0)  # không đề xuất vượt quá 100% tài khoản
 
     margin_usdt = None
     notional_usdt = None
@@ -324,6 +339,8 @@ def calc_position_sizing(entry, stop_loss, confluence_pct, profile_key,
             if adjusted > leverage:
                 leverage = adjusted
                 min_notional_adjusted = True
+                margin_pct = notional_pct / leverage if leverage > 0 else margin_pct
+                margin_usdt = round(account_balance * margin_pct / 100, 2)
             notional_usdt = round(margin_usdt * leverage, 2)
 
     return {
