@@ -282,15 +282,25 @@ def generate_all_signals(tf_results):
 # ------------------------------------------------------------------
 # Khác với bản trước (tự giảm risk khi tín hiệu yếu), giờ risk_percent CỐ ĐỊNH theo
 # đúng mức bạn chấp nhận (mặc định 1.5%, giữa khoảng 1-2% bạn nói) cho MỌI tín hiệu,
-# không phân biệt mạnh/yếu. Độ mạnh tín hiệu (confluence_pct) giờ chỉ dùng để hiển thị
-# "độ tin cậy" tham khảo, KHÔNG còn tự động thu hẹp risk nữa.
+# QUẢN LÝ VỐN: RISK% LINH HOẠT THEO ĐỘ TIN CẬY TÍN HIỆU + MARGIN & ĐÒN BẨY ĐỀ XUẤT
+# ------------------------------------------------------------------
+# Risk% giờ THAY ĐỔI theo độ hội tụ đa khung (confluence_pct) — tín hiệu càng nhiều khung
+# đồng thuận (đáng tin hơn) thì được risk cao hơn (gần RISK_PERCENT_MAX); tín hiệu yếu hơn
+# thì risk thấp hơn (gần RISK_PERCENT_MIN), giống hệt cách R:R đã linh hoạt trước đó.
 #
-# LƯU Ý QUAN TRỌNG: vì risk% giữ cố định bất kể tín hiệu mạnh/yếu, những tín hiệu có
-# khoảng cách entry→SL hẹp (do ATR thấp) sẽ cần ĐÒN BẨY CAO HƠN mới đạt đúng risk% đó.
-# Đòn bẩy càng cao, biên độ "wick" chịu được trước khi bị thanh lý càng nhỏ — đây là rủi ro
-# thật ngoài con số % risk trên lý thuyết, không phải rủi ro có thể loại bỏ bằng công thức.
-RISK_PERCENT_DEFAULT = float(os.environ.get("RISK_PERCENT", "1.5"))       # % tài khoản risk mỗi lệnh
-MARGIN_PCT_TARGET_DEFAULT = float(os.environ.get("MARGIN_PCT_TARGET", "8.0"))  # % tài khoản dùng làm ký quỹ
+# LƯU Ý: vì risk% giờ thay đổi theo từng lệnh, khoảng cách entry→SL (do ATR quyết định) cũng
+# khác nhau mỗi lệnh, nên ĐÒN BẨY CẦN DÙNG sẽ dao động theo cả 2 yếu tố: độ tin cậy tín hiệu
+# VÀ khung giao dịch. Đòn bẩy càng cao, biên độ "wick" chịu được trước khi bị thanh lý càng
+# nhỏ — đây là rủi ro thật ngoài con số % risk trên lý thuyết, không phải rủi ro loại bỏ được bằng công thức.
+RISK_PERCENT_MIN = float(os.environ.get("RISK_PERCENT_MIN", "0.5"))   # tín hiệu yếu nhất
+RISK_PERCENT_MAX = float(os.environ.get("RISK_PERCENT_MAX", "2.0"))   # tín hiệu mạnh nhất
+MARGIN_PCT_TARGET_DEFAULT = float(os.environ.get("MARGIN_PCT_TARGET", "8.0"))  # điểm neo ước tính ban đầu
+
+def dynamic_risk_percent(confluence_pct):
+    """Nội suy risk% theo độ hội tụ đa khung — cùng công thức chuẩn hoá với dynamic_rr_ratio."""
+    lo, hi = 30.0, 100.0
+    t = max(0.0, min(1.0, (confluence_pct - lo) / (hi - lo)))
+    return round(RISK_PERCENT_MIN + (RISK_PERCENT_MAX - RISK_PERCENT_MIN) * t, 3)
 
 # Khung đòn bẩy riêng theo từng khung giao dịch (timeframe) — khung nhỏ (M15) có SL
 # co giãn theo ATR hẹp hơn nên tự nhiên cần đòn bẩy cao hơn mới đạt đúng risk_percent;
@@ -333,21 +343,24 @@ def calc_position_sizing(entry, stop_loss, confluence_pct, profile_key,
                           risk_percent=None, margin_pct_anchor=None, account_balance=None):
     """
     Trả về dict:
-    - confidence_level: nhãn độ tin cậy tín hiệu (chỉ để hiển thị)
-    - risk_percent: % tài khoản chấp nhận mất nếu dính SL (cố định theo cấu hình của bạn)
+    - confidence_level: nhãn độ tin cậy tín hiệu
+    - risk_percent: % tài khoản chấp nhận mất nếu dính SL — LINH HOẠT theo confluence_pct
+      (tín hiệu mạnh → gần RISK_PERCENT_MAX, tín hiệu yếu → gần RISK_PERCENT_MIN)
     - leverage: đòn bẩy đề xuất, đã kẹp trong khung riêng của profile (VD SCALP: 50-200x)
     - margin_pct: % tài khoản dùng làm ký quỹ — TÍNH LẠI theo leverage cuối cùng, nên sẽ
       THAY ĐỔI theo từng lệnh: đòn bẩy càng cao (khung nhỏ, SL hẹp) → margin càng THẤP;
       đòn bẩy càng thấp (khung lớn, SL rộng) → margin cần cao hơn để giữ đúng risk_percent.
     - leverage_capped: True nếu đòn bẩy CẦN vượt trần của profile (đã kẹp xuống trần —
-      risk thực tế khi đó sẽ CAO HƠN risk_percent bạn chọn, vì không đủ đòn bẩy để đạt
+      risk thực tế khi đó sẽ CAO HƠN risk_percent hiển thị, vì không đủ đòn bẩy để đạt
       đúng risk% mong muốn — cân nhắc kỹ trước khi vào lệnh này)
     - margin_usdt, notional_usdt: số tiền cụ thể (USDT) NẾU bạn khai báo ACCOUNT_BALANCE_USDT,
       None nếu không khai báo
     - min_notional_adjusted: True nếu đòn bẩy đã được nâng lên để đạt khối lượng lệnh tối thiểu
       sàn yêu cầu (áp dụng khi vốn nhỏ khiến margin quá ít USDT)
     """
-    risk_percent = risk_percent if risk_percent is not None else RISK_PERCENT_DEFAULT
+    # risk_percent giờ mặc định TÍNH THEO độ tin cậy tín hiệu, không còn là 1 hằng số cố định.
+    # Truyền risk_percent thủ công vào tham số nếu muốn ép về 1 mức cố định như trước.
+    risk_percent = risk_percent if risk_percent is not None else dynamic_risk_percent(confluence_pct)
     # margin_pct_anchor CHỈ dùng làm điểm khởi đầu để ước tính đòn bẩy hợp lý ban đầu,
     # KHÔNG phải giá trị margin cuối cùng — margin thực sẽ được tính lại bên dưới.
     margin_anchor = margin_pct_anchor if margin_pct_anchor is not None else MARGIN_PCT_TARGET_DEFAULT
