@@ -46,6 +46,15 @@ def dynamic_rr_ratio(confluence_pct):
     return RR_MIN + (RR_MAX - RR_MIN) * t
 
 # ------------------------------------------------------------------
+# NGƯỠNG LỌC TÍN HIỆU — tăng độ chặt để giảm SL bị dính oan do bắt tín hiệu ở vùng giằng co
+# ------------------------------------------------------------------
+RSI_OVERSOLD = float(os.environ.get("RSI_OVERSOLD", "40"))    # trước: 45 — giờ khắt khe hơn
+RSI_OVERBOUGHT = float(os.environ.get("RSI_OVERBOUGHT", "60"))  # trước: 55 — giờ khắt khe hơn
+SL_ATR_MULTIPLIER = float(os.environ.get("SL_ATR_MULTIPLIER", "1.4"))       # trước: 1.0 — nới SL xa hơn
+SL_ATR_FALLBACK_MULTIPLIER = float(os.environ.get("SL_ATR_FALLBACK_MULTIPLIER", "1.8"))  # trước: 1.5
+TREND_STRENGTH_ATR_MULT = float(os.environ.get("TREND_STRENGTH_ATR_MULT", "0.3"))  # mới: lọc trend yếu/giằng co
+
+# ------------------------------------------------------------------
 # 3 PROFILE GIAO DỊCH
 # ------------------------------------------------------------------
 TRADE_PROFILES = {
@@ -53,21 +62,18 @@ TRADE_PROFILES = {
         "label": "Lướt sóng (M15)",
         "entry_tf": "M15",
         "bias_tfs": ["H1", "H4"],
-        "rsi_buy": 45, "rsi_sell": 55,
         "tolerance_pct": 0.5,
     },
     "SWING": {
         "label": "Trung hạn (H1)",
         "entry_tf": "H1",
         "bias_tfs": ["H4", "D1"],
-        "rsi_buy": 45, "rsi_sell": 55,
         "tolerance_pct": 0.8,
     },
     "POSITION": {
         "label": "Dài hạn (H4)",
         "entry_tf": "H4",
         "bias_tfs": ["D1"],
-        "rsi_buy": 45, "rsi_sell": 55,
         "tolerance_pct": 1.2,
     },
 }
@@ -132,9 +138,14 @@ def analyze_timeframe(df):
     if pd.isna(ema50) or pd.isna(rsi) or pd.isna(atr):
         return None
 
-    if price > ema20 > ema50:
+    # Chỉ công nhận UP/DOWN nếu giá cách EMA50 đủ xa (tối thiểu TREND_STRENGTH_ATR_MULT × ATR) —
+    # tránh bắt tín hiệu ở vùng giằng co/giao cắt biên, nơi giá > EMA20 > EMA50 chỉ lệch vài đồng
+    # (trend "kỹ thuật" nhưng không đủ lực đẩy thật, hay gây SL bị quét lại ngay sau khi vào lệnh).
+    trend_strength_ok = abs(price - ema50) > TREND_STRENGTH_ATR_MULT * atr
+
+    if price > ema20 > ema50 and trend_strength_ok:
         trend = "UP"
-    elif price < ema20 < ema50:
+    elif price < ema20 < ema50 and trend_strength_ok:
         trend = "DOWN"
     else:
         trend = "SIDEWAYS"
@@ -177,7 +188,7 @@ def generate_signal_for_profile(tf_results, profile_key):
     reasons = []
     bias_label = " & ".join(profile["bias_tfs"])
 
-    if bull_bias and entry["rsi"] < profile["rsi_buy"]:
+    if bull_bias and entry["rsi"] < RSI_OVERSOLD:
         near_support = abs(entry["price"] - entry["support"]) / entry["support"] * 100 < tol * 2
         if near_fib or near_support:
             signal_type = "BUY (LONG)"
@@ -185,7 +196,7 @@ def generate_signal_for_profile(tf_results, profile_key):
             reasons.append(f"{profile['entry_tf']} RSI thấp ({round(entry['rsi'], 1)})")
             reasons.append(f"Giá chạm Fib {near_fib}" if near_fib else f"Giá chạm vùng hỗ trợ {profile['entry_tf']}")
 
-    elif bear_bias and entry["rsi"] > profile["rsi_sell"]:
+    elif bear_bias and entry["rsi"] > RSI_OVERBOUGHT:
         near_resistance = abs(entry["price"] - entry["resistance"]) / entry["resistance"] * 100 < tol * 2
         if near_fib or near_resistance:
             signal_type = "SELL (SHORT)"
@@ -199,15 +210,16 @@ def generate_signal_for_profile(tf_results, profile_key):
     price = entry["price"]
     atr = entry["atr"]
 
-    # Tính SL theo biến động (ATR) kết hợp Hỗ trợ/Kháng cự
+    # Tính SL theo biến động (ATR) kết hợp Hỗ trợ/Kháng cự — nới rộng hơn (SL_ATR_MULTIPLIER)
+    # để giảm khả năng bị "wick" quét dính SL trong khi xu hướng chính vẫn đúng.
     if "BUY" in signal_type:
-        sl = entry["support"] - (1.0 * atr)
+        sl = entry["support"] - (SL_ATR_MULTIPLIER * atr)
         if sl >= price:
-            sl = price - (1.5 * atr)
+            sl = price - (SL_ATR_FALLBACK_MULTIPLIER * atr)
     else:
-        sl = entry["resistance"] + (1.0 * atr)
+        sl = entry["resistance"] + (SL_ATR_MULTIPLIER * atr)
         if sl <= price:
-            sl = price + (1.5 * atr)
+            sl = price + (SL_ATR_FALLBACK_MULTIPLIER * atr)
 
     # Độ hội tụ đa khung — tính TRƯỚC để dùng làm cơ sở nội suy R:R linh hoạt
     bull_w = sum(TF_WEIGHT[tf] for tf, r in tf_results.items() if r["trend"] == "UP")
