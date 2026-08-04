@@ -231,7 +231,7 @@ def get_klines(symbol: str, interval: str, limit: int = 210):
 # ------------------------------------------------------------------
 # 5. QUÉT 1 COIN → SINH TÍN HIỆU CHO CẢ 3 PROFILE (SCALP/SWING/POSITION)
 # ------------------------------------------------------------------
-def scan_symbol(symbol, volumes_map):
+def scan_symbol(symbol, volumes_map, btc_context=None):
     tf_results = {}
     for tf_label, interval in TIMEFRAMES.items():
         df = get_klines(symbol, interval)
@@ -239,7 +239,9 @@ def scan_symbol(symbol, volumes_map):
         if result:
             tf_results[tf_label] = result
 
-    all_signals = generate_all_signals(tf_results)
+    # Không lọc BTC theo chính nó — chỉ áp dụng bộ lọc macro cho các altcoin khác
+    ctx = None if symbol == "BTCUSDT" else btc_context
+    all_signals = generate_all_signals(tf_results, btc_context=ctx)
     if not all_signals:
         return {}
 
@@ -291,12 +293,25 @@ def run_web_server():
 # ------------------------------------------------------------------
 # 7. QUÉT TOÀN BỘ WATCHLIST SONG SONG (đa luồng) → ĐẨY FIREBASE & TELEGRAM
 # ------------------------------------------------------------------
+def get_btc_context():
+    """Tính xu hướng BTC 1 lần mỗi chu kỳ quét — dùng làm bộ lọc macro cho toàn bộ altcoin."""
+    tf_results = {}
+    for tf_label, interval in TIMEFRAMES.items():
+        df = get_klines("BTCUSDT", interval)
+        result = analyze_timeframe(df)
+        if result:
+            tf_results[tf_label] = result
+    context = {tf: r["trend"] for tf, r in tf_results.items()}
+    print(f"[₿ BTC CONTEXT] {context}")
+    return context
+
 def scan_and_push_to_firebase():
     start_ts = time.time()
     print(f"\n[🚀 SCANNING] Bắt đầu quét lúc: {now_vn_str()}...")
 
     watchlist = get_top_watchlist()
     volumes_map = get_binance_24h_volumes()
+    btc_context = get_btc_context()
     signals_to_upload = {}
     done_count = 0
 
@@ -304,7 +319,7 @@ def scan_and_push_to_firebase():
     # (network I/O), nên chạy song song nhiều coin cùng lúc giúp tận dụng thời gian chờ đó,
     # thay vì xếp hàng tuần tự — đây là thay đổi giúp giảm thời gian quét đáng kể.
     with ThreadPoolExecutor(max_workers=SCAN_WORKERS) as executor:
-        futures = {executor.submit(scan_symbol, symbol, volumes_map): symbol for symbol in watchlist}
+        futures = {executor.submit(scan_symbol, symbol, volumes_map, btc_context): symbol for symbol in watchlist}
         for future in as_completed(futures):
             symbol = futures[future]
             done_count += 1
