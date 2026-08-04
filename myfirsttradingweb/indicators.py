@@ -117,6 +117,40 @@ def nearest_fib_level(price, fib_levels, tolerance_pct=0.5):
     return None
 
 # ------------------------------------------------------------------
+# NHẬN DIỆN NẾN ĐẢO CHIỀU (xác nhận thêm cho tín hiệu, không chỉ dựa vào RSI+vị trí giá)
+# ------------------------------------------------------------------
+REQUIRE_CANDLE_CONFIRMATION = os.environ.get("REQUIRE_CANDLE_CONFIRMATION", "true").lower() == "true"
+
+def detect_reversal_candle(df):
+    """
+    Nhận diện mẫu nến đảo chiều ở nến ĐÃ ĐÓNG CỬA gần nhất (iloc[-2]):
+    - Bullish/Bearish Engulfing: nến sau "nuốt trọn" thân nến trước theo chiều ngược lại
+    - Hammer / Shooting Star: bấc dài gấp ~1.5 lần thân nến, xác nhận lực từ chối giá mạnh
+    Trả về (bullish_reversal: bool, bearish_reversal: bool)
+    """
+    if len(df) < 4:
+        return False, False
+
+    c2_open, c2_close = df['open'].iloc[-2], df['close'].iloc[-2]
+    c2_high, c2_low = df['high'].iloc[-2], df['low'].iloc[-2]
+    c3_open, c3_close = df['open'].iloc[-3], df['close'].iloc[-3]
+
+    bullish_engulfing = (c3_close < c3_open) and (c2_close > c2_open) and (c2_close >= c3_open) and (c2_open <= c3_close)
+    bearish_engulfing = (c3_close > c3_open) and (c2_close < c2_open) and (c2_close <= c3_open) and (c2_open >= c3_close)
+
+    body = abs(c2_close - c2_open)
+    candle_range = c2_high - c2_low
+    lower_wick = min(c2_open, c2_close) - c2_low
+    upper_wick = c2_high - max(c2_open, c2_close)
+
+    is_hammer = candle_range > 0 and lower_wick > body * 1.5 and upper_wick < body * 0.6
+    is_shooting_star = candle_range > 0 and upper_wick > body * 1.5 and lower_wick < body * 0.6
+
+    bullish_reversal = bool(bullish_engulfing or is_hammer)
+    bearish_reversal = bool(bearish_engulfing or is_shooting_star)
+    return bullish_reversal, bearish_reversal
+
+# ------------------------------------------------------------------
 # PHÂN TÍCH 1 KHUNG THỜI GIAN (có tính ATR)
 # ------------------------------------------------------------------
 def analyze_timeframe(df):
@@ -154,6 +188,7 @@ def analyze_timeframe(df):
     # Vùng hỗ trợ/kháng cự "rộng" hơn (nhìn xa hơn trong lịch sử) — dùng để chặn TP không
     # đặt vượt quá 1 vùng cản lớn phía trước, giữ R:R linh hoạt nhưng vẫn bám cấu trúc giá thực tế.
     support_wide, resistance_wide = find_support_resistance(df, lookback=min(150, len(df) - 5))
+    bullish_reversal_candle, bearish_reversal_candle = detect_reversal_candle(df)
 
     return {
         "price": float(price),
@@ -164,12 +199,29 @@ def analyze_timeframe(df):
         "resistance": resistance,
         "support_wide": support_wide,
         "resistance_wide": resistance_wide,
+        "bullish_reversal_candle": bullish_reversal_candle,
+        "bearish_reversal_candle": bearish_reversal_candle,
     }
+
+# ------------------------------------------------------------------
+# LỌC THEO XU HƯỚNG BTC (macro filter) — không xác nhận LONG altcoin khi BTC đang giảm mạnh,
+# không xác nhận SHORT altcoin khi BTC đang tăng mạnh. Phần lớn altcoin đi theo BTC, nên đi
+# ngược dòng BTC dù chỉ báo riêng coin đó đẹp vẫn là giao dịch rủi ro cao hơn cần thiết.
+# ------------------------------------------------------------------
+BTC_FILTER_ENABLED = os.environ.get("BTC_FILTER_ENABLED", "true").lower() == "true"
+
+def get_btc_reference_trend(btc_context, profile_key):
+    """Chọn khung tham chiếu BTC phù hợp với profile: POSITION nhìn D1, còn lại nhìn H4."""
+    if not btc_context:
+        return None
+    if profile_key == "POSITION":
+        return btc_context.get("D1") or btc_context.get("H4")
+    return btc_context.get("H4") or btc_context.get("D1")
 
 # ------------------------------------------------------------------
 # SINH TÍN HIỆU CHO 1 PROFILE CỤ THỂ (dùng ATR để tối ưu SL)
 # ------------------------------------------------------------------
-def generate_signal_for_profile(tf_results, profile_key):
+def generate_signal_for_profile(tf_results, profile_key, btc_context=None):
     profile = TRADE_PROFILES[profile_key]
     entry = tf_results.get(profile["entry_tf"])
     biases = [tf_results.get(tf) for tf in profile["bias_tfs"]]
@@ -190,22 +242,36 @@ def generate_signal_for_profile(tf_results, profile_key):
 
     if bull_bias and entry["rsi"] < RSI_OVERSOLD:
         near_support = abs(entry["price"] - entry["support"]) / entry["support"] * 100 < tol * 2
-        if near_fib or near_support:
+        candle_ok = (not REQUIRE_CANDLE_CONFIRMATION) or entry.get("bullish_reversal_candle")
+        if (near_fib or near_support) and candle_ok:
             signal_type = "BUY (LONG)"
             reasons.append(f"{bias_label} cùng xu hướng Tăng")
             reasons.append(f"{profile['entry_tf']} RSI thấp ({round(entry['rsi'], 1)})")
             reasons.append(f"Giá chạm Fib {near_fib}" if near_fib else f"Giá chạm vùng hỗ trợ {profile['entry_tf']}")
+            if entry.get("bullish_reversal_candle"):
+                reasons.append("Nến xác nhận đảo chiều (Engulfing/Hammer)")
 
     elif bear_bias and entry["rsi"] > RSI_OVERBOUGHT:
         near_resistance = abs(entry["price"] - entry["resistance"]) / entry["resistance"] * 100 < tol * 2
-        if near_fib or near_resistance:
+        candle_ok = (not REQUIRE_CANDLE_CONFIRMATION) or entry.get("bearish_reversal_candle")
+        if (near_fib or near_resistance) and candle_ok:
             signal_type = "SELL (SHORT)"
             reasons.append(f"{bias_label} cùng xu hướng Giảm")
             reasons.append(f"{profile['entry_tf']} RSI cao ({round(entry['rsi'], 1)})")
             reasons.append(f"Giá chạm Fib {near_fib}" if near_fib else f"Giá chạm vùng kháng cự {profile['entry_tf']}")
+            if entry.get("bearish_reversal_candle"):
+                reasons.append("Nến xác nhận đảo chiều (Engulfing/Shooting Star)")
 
     if not signal_type:
         return None
+
+    # Lọc theo xu hướng BTC — bỏ qua tín hiệu đi ngược dòng thị trường chung (trừ chính BTCUSDT)
+    if BTC_FILTER_ENABLED and btc_context:
+        btc_ref = get_btc_reference_trend(btc_context, profile_key)
+        if signal_type == "BUY (LONG)" and btc_ref == "DOWN":
+            return None
+        if signal_type == "SELL (SHORT)" and btc_ref == "UP":
+            return None
 
     price = entry["price"]
     atr = entry["atr"]
@@ -269,10 +335,10 @@ def generate_signal_for_profile(tf_results, profile_key):
         "resistance": round(entry["resistance"], 6),
     }
 
-def generate_all_signals(tf_results):
+def generate_all_signals(tf_results, btc_context=None):
     signals = {}
     for key in TRADE_PROFILES:
-        sig = generate_signal_for_profile(tf_results, key)
+        sig = generate_signal_for_profile(tf_results, key, btc_context=btc_context)
         if sig:
             signals[key] = sig
     return signals
