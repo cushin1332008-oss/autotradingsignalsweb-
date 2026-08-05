@@ -12,8 +12,8 @@ SYMBOLS = [
     "DOGEUSDT", "ADAUSDT", "LINKUSDT", "AVAXUSDT", "SUIUSDT"
 ]
 
-# Đa khung thời gian quét (Multi-Timeframe Engine)
-TIMEFRAMES = ["5m", "15m", "1h"]
+# Đa khung thời gian quét (Đã bao gồm khung H4 bắt sóng lớn)
+TIMEFRAMES = ["5m", "15m", "1h", "4h"]
 
 COOLDOWN_TRACKER = {}
 COOLDOWN_SECONDS = 600  # Chống spam tín hiệu lặp lại trong 10 phút
@@ -44,7 +44,7 @@ def format_price(price):
         return f"{price:.4f}"
 
 def analyze_and_screen():
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔍 Đang quét thị trường (Multi-Coin & Multi-TF)...")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔍 Cu Shin Bot đang quét thị trường (Đa Coin & Đa Khung M5, M15, H1, H4)...")
     
     for symbol in SYMBOLS:
         for tf in TIMEFRAMES:
@@ -84,7 +84,7 @@ def analyze_and_screen():
                     entry1 = last_price
                     entry2 = last_price * 0.992  # DCA rải sâu 0.8%
                     sl = last_price * 0.985      # Stop Loss chặt chẽ -1.5%
-                    tp = last_price * 1.035      # Take Profit mục tiêu +3.5% (Tỉ lệ R:R cực cao)
+                    tp = last_price * 1.035      # Take Profit mục tiêu +3.5%
                     leverage = "50x - 200x"
                 else:
                     entry1 = last_price
@@ -114,7 +114,7 @@ def analyze_and_screen():
                     pass
 
 def run_screener():
-    print("🚀 Auto-Screener Engine (Pro Max) đã kích hoạt...")
+    print("🚀 Cu Shin Pro Signals Bot Engine đã kích hoạt thành công...")
     while True:
         try:
             analyze_and_screen()
