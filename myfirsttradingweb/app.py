@@ -7,7 +7,7 @@ app = Flask(__name__)
 DB_NAME = 'database.db'
 
 def init_db():
-    """Khởi tạo SQLite Database với Index để tối ưu tốc độ truy vấn"""
+    """Khởi tạo SQLite Database với Index tối ưu hóa tốc độ tải"""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute('''
@@ -26,12 +26,10 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    # Tối ưu hóa: Tạo Index giúp load 100 tín hiệu mới nhất cực nhanh (0ms)
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_signals_id ON signals(id DESC)')
     conn.commit()
     conn.close()
 
-# Khởi tạo DB khi chạy app
 init_db()
 
 def get_db_connection():
@@ -45,7 +43,7 @@ def home():
 
 @app.route('/api/signals', methods=['GET'])
 def fetch_signals():
-    """API Lấy danh sách 100 tín hiệu mới nhất"""
+    """API lấy danh sách tín hiệu mới nhất"""
     try:
         conn = get_db_connection()
         signals = conn.execute('SELECT * FROM signals ORDER BY id DESC LIMIT 100').fetchall()
@@ -93,43 +91,13 @@ def receive_webhook():
             data.get("tp", "--"),
             data.get("sl", "--"),
             data.get("leverage", "20x - 100x+"),
-            data.get("risk", "Tùy chỉnh Vol"),
+            data.get("risk", "Auto Filter"),
             data.get("status", "ACTIVE")
         ))
         conn.commit()
         conn.close()
 
         return jsonify({"status": "success", "message": "Đã lưu tín hiệu vào Database"}), 200
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route('/api/calculate-risk', methods=['POST'])
-def calculate_risk():
-    """API Tính toán Margin và Position Size theo vốn"""
-    try:
-        data = request.get_json()
-        account_balance = float(data.get('account_balance', 1000))
-        risk_percent = float(data.get('risk_percent', 2.0))
-        entry_price = float(data.get('entry_price', 0))
-        sl_price = float(data.get('sl_price', 0))
-        leverage = float(data.get('leverage', 20))
-
-        if entry_price <= 0 or sl_price <= 0 or entry_price == sl_price:
-            return jsonify({"status": "error", "message": "Giá không hợp lệ"}), 400
-
-        price_diff_ratio = abs(entry_price - sl_price) / entry_price
-        max_risk_amount = account_balance * (risk_percent / 100.0)
-        total_position_size = max_risk_amount / price_diff_ratio
-        required_margin = total_position_size / leverage
-
-        return jsonify({
-            "status": "success",
-            "data": {
-                "max_risk_amount": round(max_risk_amount, 2),
-                "total_position_size": round(total_position_size, 2),
-                "required_margin": round(required_margin, 2)
-            }
-        })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
