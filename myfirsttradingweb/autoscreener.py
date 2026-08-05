@@ -2,17 +2,14 @@ import time
 import requests
 import pandas as pd
 from datetime import datetime
-from indicators import apply_all_indicators  # Import module chỉ báo kỹ thuật chuyên biệt
+from indicators import apply_all_indicators
 
-# URL Webhook (Nếu chạy local giữ nguyên, khi đưa lên cloud đổi sang domain chính thức)
 WEBHOOK_URL = "http://127.0.0.1:5000/api/webhook"
-
 SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT", "ADAUSDT", "LINKUSDT"]
 COOLDOWN_TRACKER = {}
-COOLDOWN_SECONDS = 900  # Cooldown 15 phút giữa các lần bắn tín hiệu trùng lặp cho một coin
+COOLDOWN_SECONDS = 900  # Cooldown 15 phút giữa các tín hiệu trùng lặp
 
 def get_klines(symbol, timeframe="15m", limit=200):
-    """Lấy dữ liệu nến từ Binance Futures API"""
     try:
         url = f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval={timeframe}&limit={limit}"
         res = requests.get(url, timeout=5)
@@ -29,7 +26,6 @@ def get_klines(symbol, timeframe="15m", limit=200):
     return None
 
 def format_price(price):
-    """Định dạng chuẩn số chữ số thập phân theo mệnh giá coin"""
     if price >= 1000:
         return f"{price:,.2f}"
     elif price >= 1:
@@ -38,14 +34,13 @@ def format_price(price):
         return f"{price:.4f}"
 
 def analyze_and_screen():
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔍 Đang quét thị trường Binance Futures (Modular Engine)...")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔍 Đang quét thị trường Binance Futures...")
     
     for symbol in SYMBOLS:
         df = get_klines(symbol, timeframe="15m", limit=200)
         if df is None:
             continue
 
-        # Áp dụng module tính toán chỉ báo
         df = apply_all_indicators(df)
         if df is None:
             continue
@@ -57,16 +52,11 @@ def analyze_and_screen():
         curr_vol = last_row['volume']
         avg_vol = last_row['vol_ma20']
 
-        # Điều kiện khối lượng đột biến (> 1.3 lần trung bình 20 nến)
         is_volume_valid = curr_vol > (avg_vol * 1.3)
         position = None
 
-        # --- THUẬT TOÁN TÍN HIỆU MULTI-FILTER ---
-        # LONG: Giá trên EMA200 (Uptrend) + RSI quá bán (< 38) + Volume đột biến
         if last_price > ema200 and last_rsi < 38 and is_volume_valid:
             position = "LONG"
-
-        # SHORT: Giá dưới EMA200 (Downtrend) + RSI quá mua (> 62) + Volume đột biến
         elif last_price < ema200 and last_rsi > 62 and is_volume_valid:
             position = "SHORT"
 
@@ -76,17 +66,16 @@ def analyze_and_screen():
             if key in COOLDOWN_TRACKER and (now_ts - COOLDOWN_TRACKER[key]) < COOLDOWN_SECONDS:
                 continue
 
-            # Tính toán các mức giá Entry, DCA, TP, SL với tỉ lệ R:R = 1:2
             if position == "LONG":
                 entry1 = last_price
-                entry2 = last_price * 0.993  # DCA 2 thấp hơn 0.7%
-                sl = last_price * 0.988      # Stop Loss: -1.2%
-                tp = last_price * 1.024      # Take Profit: +2.4%
-            else: # SHORT
+                entry2 = last_price * 0.993
+                sl = last_price * 0.988
+                tp = last_price * 1.024
+            else:
                 entry1 = last_price
-                entry2 = last_price * 1.007  # DCA 2 cao hơn 0.7%
-                sl = last_price * 1.012      # Stop Loss: +1.2%
-                tp = last_price * 0.976      # Take Profit: -2.4%
+                entry2 = last_price * 1.007
+                sl = last_price * 1.012
+                tp = last_price * 0.976
 
             payload = {
                 "symbol": symbol,
@@ -97,7 +86,7 @@ def analyze_and_screen():
                 "tp": format_price(tp),
                 "sl": format_price(sl),
                 "leverage": "20x - 100x+",
-                "risk": "Tùy chỉnh Vol",
+                "risk": "Auto Filter",
                 "status": "ACTIVE"
             }
 
@@ -110,11 +99,11 @@ def analyze_and_screen():
                 print(f"Lỗi Webhook: {e}")
 
 def run_screener():
-    print("🚀 Auto-Screener Engine (Modular Mode) đang khởi động...")
+    print("🚀 Auto-Screener Engine đang khởi động...")
     while True:
         try:
             analyze_and_screen()
-            time.sleep(15)  # Quét định kỳ mỗi 15 giây
+            time.sleep(15)
         except Exception as e:
             print(f"Lỗi vòng lặp Screener: {e}")
             time.sleep(10)
