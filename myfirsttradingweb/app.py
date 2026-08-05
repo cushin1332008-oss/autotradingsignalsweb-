@@ -1,13 +1,20 @@
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
 DB_NAME = 'database.db'
 
+# Định nghĩa Múi Giờ Việt Nam (GMT+7)
+VN_TZ = timezone(timedelta(hours=7))
+
+def get_vn_now_str():
+    """Hàm lấy thời gian hiện tại theo Giờ Việt Nam (YYYY-MM-DD HH:MM:SS)"""
+    return datetime.now(VN_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
 def init_db():
-    """Khởi tạo Database SQLite với Index tối ưu tốc độ"""
+    """Khởi tạo Database SQLite"""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute('''
@@ -23,7 +30,7 @@ def init_db():
             leverage TEXT NOT NULL,
             risk TEXT NOT NULL,
             status TEXT DEFAULT 'ACTIVE',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL
         )
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_signals_id ON signals(id DESC)')
@@ -43,7 +50,7 @@ def home():
 
 @app.route('/api/signals', methods=['GET'])
 def fetch_signals():
-    """API Truy xuất tín hiệu tốc độ cao (Giới hạn 100 tín hiệu mới nhất)"""
+    """API Truy xuất 100 tín hiệu mới nhất kèm thời gian Giờ Việt Nam"""
     try:
         conn = get_db_connection()
         signals = conn.execute('SELECT * FROM signals ORDER BY id DESC LIMIT 100').fetchall()
@@ -51,6 +58,10 @@ def fetch_signals():
         
         signal_list = []
         for s in signals:
+            created_str = str(s['created_at'])
+            # Tách riêng phần Giờ:Phút:Giây (Ví dụ: 17:45:12)
+            time_display = created_str.split(' ')[1] if ' ' in created_str else created_str
+            
             signal_list.append({
                 "id": s['id'],
                 "symbol": s['symbol'],
@@ -63,7 +74,8 @@ def fetch_signals():
                 "leverage": s['leverage'],
                 "risk": s['risk'],
                 "status": s['status'],
-                "time": s['created_at'].split(' ')[1] if ' ' in str(s['created_at']) else datetime.now().strftime("%H:%M:%S")
+                "time": time_display,
+                "full_date": created_str
             })
             
         return jsonify({"status": "success", "total": len(signal_list), "data": signal_list})
@@ -72,16 +84,19 @@ def fetch_signals():
 
 @app.route('/api/webhook', methods=['POST'])
 def receive_webhook():
-    """API Nhận tín hiệu từ hệ thống Auto Screener"""
+    """API Nhận tín hiệu từ Bot - Đóng dấu chính xác Giờ Việt Nam"""
     try:
         data = request.get_json()
         if not data:
             return jsonify({"status": "error", "message": "Payload empty"}), 400
 
+        # Lấy thời gian chuẩn Việt Nam
+        vn_time_now = get_vn_now_str()
+
         conn = get_db_connection()
         conn.execute('''
-            INSERT INTO signals (symbol, tf, position, entry1, entry2, tp, sl, leverage, risk, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO signals (symbol, tf, position, entry1, entry2, tp, sl, leverage, risk, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data.get("symbol", "BTCUSDT").replace('#', '').upper(),
             data.get("tf", "M15"),
@@ -92,12 +107,13 @@ def receive_webhook():
             data.get("sl", "--"),
             data.get("leverage", "50x - 200x"),
             data.get("risk", "Chia Vol 40/60"),
-            data.get("status", "ACTIVE")
+            data.get("status", "ACTIVE"),
+            vn_time_now
         ))
         conn.commit()
         conn.close()
 
-        return jsonify({"status": "success", "message": "Lưu tín hiệu thành công"}), 200
+        return jsonify({"status": "success", "message": f"Đã lưu tín hiệu lúc {vn_time_now} (GMT+7)"}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
