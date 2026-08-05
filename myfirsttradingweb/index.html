@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Alpha Signal Enterprise - Quantitative Trading Dashboard</title>
+    <title>Alpha Signal Pro - Trading Dashboard</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- TradingView Widget Script -->
+    <!-- TradingView Widget -->
     <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
     <script>
         tailwind.config = {
@@ -30,7 +30,7 @@
         }
     </script>
     <style>
-        body { background-color: #0B0E11; color: #EAECSF; font-family: 'Inter', sans-serif; }
+        body { background-color: #0B0E11; color: #EAECF0; font-family: 'Inter', sans-serif; }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #181A20; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #2B313A; border-radius: 3px; }
@@ -39,7 +39,6 @@
 </head>
 <body class="min-h-screen flex flex-col custom-scrollbar">
 
-    <!-- Top Navigation Bar -->
     <header class="border-b border-brand-border bg-brand-card px-6 py-4 flex items-center justify-between sticky top-0 z-50">
         <div class="flex items-center space-x-3">
             <div class="w-9 h-9 bg-brand-accent rounded-lg flex items-center justify-center text-black font-bold text-xl shadow-lg shadow-yellow-500/20">
@@ -47,96 +46,39 @@
             </div>
             <div>
                 <h1 class="text-lg font-bold tracking-wide text-white leading-tight flex items-center gap-2">
-                    ALPHA SIGNAL <span class="text-brand-accent text-xs px-2 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/20">ENTERPRISE PRO</span>
+                    ALPHA SIGNAL <span class="text-brand-accent text-xs px-2 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/20">QUANT PRO</span>
                 </h1>
-                <p class="text-xs text-gray-400">Quantitative Screener Engine & Risk Calculator</p>
+                <p class="text-xs text-gray-400">Live Screener & Vol Calculator</p>
             </div>
         </div>
-
-        <div class="flex items-center space-x-6">
+        <div class="flex items-center space-x-4">
             <div class="flex items-center space-x-2 text-xs bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg">
                 <span class="relative flex h-2.5 w-2.5">
                     <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                     <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                 </span>
-                <span class="text-emerald-400 font-semibold">Engine Running (SQLite active)</span>
+                <span class="text-emerald-400 font-semibold">System Active</span>
             </div>
-
-            <a href="https://t.me" target="_blank" class="flex items-center space-x-2 bg-blue-600/20 border border-blue-500/30 text-blue-400 hover:bg-blue-600/30 px-3 py-1.5 rounded-lg text-xs font-semibold transition">
-                <i class="fa-brands fa-telegram text-sm"></i>
-                <span>Telegram Signal VIP</span>
-            </a>
         </div>
     </header>
 
-    <!-- Main Content Area -->
     <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
 
-        <!-- Top Metrics Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex items-center justify-between">
-                <div>
-                    <p class="text-xs text-gray-400 font-medium uppercase">Tín Hiệu Hiển Thị</p>
-                    <p id="total-signals-count" class="text-2xl font-bold text-white mt-1">0</p>
-                    <p class="text-xs text-emerald-400 mt-1"><i class="fa-solid fa-sync fa-spin"></i> Live Sync Active</p>
-                </div>
-                <div class="p-3 bg-gray-800/50 rounded-lg text-brand-accent text-xl">
-                    <i class="fa-solid fa-satellite-dish"></i>
-                </div>
-            </div>
-
-            <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex items-center justify-between">
-                <div>
-                    <p class="text-xs text-gray-400 font-medium uppercase">Tỉ Lệ Thắng (Winrate)</p>
-                    <p class="text-2xl font-bold text-emerald-400 mt-1">81.2%</p>
-                    <p class="text-xs text-gray-400 mt-1">Dựa trên 150 lệnh gần nhất</p>
-                </div>
-                <div class="p-3 bg-emerald-500/10 rounded-lg text-emerald-400 text-xl">
-                    <i class="fa-solid fa-trophy"></i>
-                </div>
-            </div>
-
-            <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex items-center justify-between">
-                <div>
-                    <p class="text-xs text-gray-400 font-medium uppercase">BTC Trend Bias</p>
-                    <p class="text-2xl font-bold text-emerald-400 mt-1">BULLISH <span class="text-xs text-gray-400 font-normal">(H4)</span></p>
-                    <p class="text-xs text-gray-400 mt-1">Ưu tiên vị thế LONG</p>
-                </div>
-                <div class="p-3 bg-emerald-500/10 rounded-lg text-emerald-400 text-xl">
-                    <i class="fa-solid fa-chart-line"></i>
-                </div>
-            </div>
-
-            <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex items-center justify-between">
-                <div>
-                    <p class="text-xs text-gray-400 font-medium uppercase">Khuyến Nghị Risk</p>
-                    <p class="text-2xl font-bold text-brand-accent mt-1">1.0% - 2.5%</p>
-                    <p class="text-xs text-gray-400 mt-1">Margin max: 10% / Lệnh</p>
-                </div>
-                <div class="p-3 bg-yellow-500/10 rounded-lg text-brand-accent text-xl">
-                    <i class="fa-solid fa-shield-halved"></i>
-                </div>
-            </div>
-        </div>
-
-        <!-- Layout Grid: TradingView Chart + Risk Calculator Container -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
-            <!-- TradingView Chart (Col 2/3) -->
+            <!-- Biểu đồ TV -->
             <div class="lg:col-span-2 bg-brand-card border border-brand-border rounded-xl p-4">
                 <div class="flex items-center justify-between mb-3 px-2">
                     <div class="flex items-center gap-3">
                         <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                            <i class="fa-solid fa-chart-candlestick text-brand-accent"></i> Biểu Đồ Kỹ Thuật Live
+                            <i class="fa-solid fa-chart-candlestick text-brand-accent"></i> Biểu Đồ Live
                         </h2>
                         <span id="active-symbol-tag" class="bg-brand-accent/10 border border-brand-accent/30 text-brand-accent text-xs px-2.5 py-0.5 rounded font-mono font-bold">BINANCE:BTCUSDT</span>
                     </div>
-                    <p class="text-xs text-gray-400 hidden sm:block"><i class="fa-solid fa-hand-pointer text-brand-accent"></i> Click vào dòng tín hiệu để chuyển cặp coin</p>
                 </div>
                 <div class="w-full h-[450px] rounded-lg overflow-hidden border border-brand-border" id="tradingview_chart"></div>
             </div>
 
-            <!-- Position Size & Risk Calculator Widget (Col 1/3) -->
+            <!-- Risk Calc -->
             <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex flex-col justify-between">
                 <div>
                     <h2 class="text-sm font-bold text-white uppercase tracking-wider mb-4 flex items-center gap-2 border-b border-brand-border pb-2">
@@ -145,115 +87,80 @@
                     
                     <div class="space-y-3 text-xs">
                         <div>
-                            <label class="text-gray-400 block mb-1">Tổng Vốn Tài Khoản ($)</label>
+                            <label class="text-gray-400 block mb-1">Tổng Vốn ($)</label>
                             <input type="number" id="calc-balance" value="1000" class="w-full bg-brand-dark border border-brand-border rounded p-2 text-white font-mono focus:outline-none focus:border-brand-accent">
                         </div>
-
                         <div>
-                            <label class="text-gray-400 block mb-1">% Risk Chấp Nhận Lỗ / Lệnh</label>
+                            <label class="text-gray-400 block mb-1">% Risk / Lệnh</label>
                             <input type="number" id="calc-risk" value="2.0" step="0.5" class="w-full bg-brand-dark border border-brand-border rounded p-2 text-white font-mono focus:outline-none focus:border-brand-accent">
                         </div>
-
                         <div class="grid grid-cols-2 gap-2">
                             <div>
-                                <label class="text-gray-400 block mb-1">Giá Entry</label>
-                                <input type="number" id="calc-entry" placeholder="VD: 1800" class="w-full bg-brand-dark border border-brand-border rounded p-2 text-white font-mono focus:outline-none focus:border-brand-accent">
+                                <label class="text-gray-400 block mb-1">Giá Entry 1</label>
+                                <input type="number" id="calc-entry" placeholder="65000" class="w-full bg-brand-dark border border-brand-border rounded p-2 text-white font-mono focus:outline-none focus:border-brand-accent">
                             </div>
                             <div>
                                 <label class="text-gray-400 block mb-1">Giá Stop Loss</label>
-                                <input type="number" id="calc-sl" placeholder="VD: 1775" class="w-full bg-brand-dark border border-brand-border rounded p-2 text-white font-mono focus:outline-none focus:border-brand-accent">
+                                <input type="number" id="calc-sl" placeholder="64200" class="w-full bg-brand-dark border border-brand-border rounded p-2 text-white font-mono focus:outline-none focus:border-brand-accent">
                             </div>
                         </div>
-
                         <div>
-                            <label class="text-gray-400 block mb-1">Đòn Bẩy (Leverage)</label>
-                            <input type="number" id="calc-leverage" value="10" class="w-full bg-brand-dark border border-brand-border rounded p-2 text-white font-mono focus:outline-none focus:border-brand-accent">
+                            <label class="text-gray-400 block mb-1">Đòn Bẩy (20x-100x+)</label>
+                            <input type="number" id="calc-leverage" value="20" class="w-full bg-brand-dark border border-brand-border rounded p-2 text-white font-mono focus:outline-none focus:border-brand-accent">
                         </div>
-
                         <button onclick="calculatePositionRisk()" class="w-full bg-brand-accent hover:bg-yellow-400 text-black font-bold py-2 rounded transition mt-2">
-                            Tính Ký Quỹ (Margin)
+                            Tính Margin
                         </button>
                     </div>
                 </div>
 
-                <!-- Calculated Output Card -->
                 <div class="mt-4 p-3 bg-brand-dark border border-brand-border rounded-lg space-y-2 text-xs">
                     <div class="flex justify-between">
-                        <span class="text-gray-400">Số Tiền Chấp Nhận Lỗ Max:</span>
+                        <span class="text-gray-400">Số Tiền Lỗ Tối Đa:</span>
                         <span id="out-max-risk" class="font-mono text-brand-short font-bold">$0.00</span>
                     </div>
                     <div class="flex justify-between">
-                        <span class="text-gray-400">Tổng Vị Thế Hợp Đồng (Vol):</span>
+                        <span class="text-gray-400">Tổng Vị Thế (Size):</span>
                         <span id="out-pos-size" class="font-mono text-white font-bold">$0.00</span>
                     </div>
                     <div class="flex justify-between border-t border-brand-border pt-2">
-                        <span class="text-gray-400 font-bold">Ký Quỹ Cần Vào (Margin):</span>
+                        <span class="text-gray-400 font-bold">Ký Quỹ (Margin):</span>
                         <span id="out-margin" class="font-mono text-brand-accent font-bold text-sm">$0.00</span>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Table Section: Realtime Signal Table -->
         <div class="bg-brand-card border border-brand-border rounded-xl overflow-hidden">
-            
             <div class="p-4 border-b border-brand-border flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div class="flex items-center gap-2">
-                    <h2 class="text-base font-bold text-white">Bảng Tín Hiệu Quét Realtime</h2>
-                    <span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs px-2 py-0.5 rounded font-mono">SQLITE STORED</span>
-                </div>
-
-                <!-- Interactive Filter Buttons -->
-                <div class="flex flex-wrap items-center gap-2 text-xs">
-                    <span class="text-gray-400 font-medium mr-1"><i class="fa-solid fa-filter"></i> Lọc Tín Hiệu:</span>
-                    <button onclick="setFilter('ALL')" id="btn-filter-ALL" class="filter-btn filter-btn-active bg-brand-dark hover:bg-gray-700 text-gray-300 border border-brand-border px-3 py-1.5 rounded-lg transition">Tất Cả</button>
-                    <button onclick="setFilter('M15')" id="btn-filter-M15" class="filter-btn bg-brand-dark hover:bg-gray-700 text-gray-300 border border-brand-border px-3 py-1.5 rounded-lg transition">M15 (Scalp)</button>
-                    <button onclick="setFilter('H1')" id="btn-filter-H1" class="filter-btn bg-brand-dark hover:bg-gray-700 text-gray-300 border border-brand-border px-3 py-1.5 rounded-lg transition">H1 (Swing)</button>
-                    <button onclick="setFilter('H4')" id="btn-filter-H4" class="filter-btn bg-brand-dark hover:bg-gray-700 text-gray-300 border border-brand-border px-3 py-1.5 rounded-lg transition">H4 (Position)</button>
-                    <div class="h-4 w-[1px] bg-brand-border mx-1 hidden sm:block"></div>
-                    <button onclick="setFilter('LONG')" id="btn-filter-LONG" class="filter-btn bg-brand-dark hover:bg-gray-700 text-brand-long border border-brand-border px-3 py-1.5 rounded-lg transition">🟢 Chỉ Long</button>
-                    <button onclick="setFilter('SHORT')" id="btn-filter-SHORT" class="filter-btn bg-brand-dark hover:bg-gray-700 text-brand-short border border-brand-border px-3 py-1.5 rounded-lg transition">🔴 Chỉ Short</button>
+                    <h2 class="text-base font-bold text-white">Bảng Tín Hiệu (Chạm Entry thì vào)</h2>
                 </div>
             </div>
-
-            <!-- Signal Table -->
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-xs text-gray-300">
-                    <thead class="bg-brand-dark text-gray-400 uppercase font-semibold text-[11px] tracking-wider border-b border-brand-border">
+                    <thead class="bg-brand-dark text-gray-400 uppercase font-semibold text-[11px] border-b border-brand-border">
                         <tr>
-                            <th class="p-4">Cặp Coin / Khung</th>
+                            <th class="p-4">Coin / Khung</th>
                             <th class="p-4">Vị Thế</th>
-                            <th class="p-4">Entry DCA 1 / DCA 2</th>
-                            <th class="p-4">Take Profit (TP)</th>
-                            <th class="p-4">Stop Loss (SL)</th>
-                            <th class="p-4">Đòn Bẩy & Risk</th>
-                            <th class="p-4">Thời Gian</th>
-                            <th class="p-4 text-right">Thao Tác</th>
+                            <th class="p-4">Entry 1 / DCA 2 (60%)</th>
+                            <th class="p-4">Take Profit</th>
+                            <th class="p-4">Stop Loss</th>
+                            <th class="p-4">Quản Lý Vốn</th>
+                            <th class="p-4">Giờ</th>
                         </tr>
                     </thead>
                     <tbody id="signal-table-body" class="divide-y divide-brand-border">
-                        <tr>
-                            <td colspan="8" class="p-8 text-center text-gray-500">
-                                <i class="fa-solid fa-spinner fa-spin text-lg mb-2 block"></i>
-                                Đang tải danh sách tín hiệu từ SQLite Database...
-                            </td>
-                        </tr>
+                        <tr><td colspan="7" class="p-8 text-center text-gray-500">Đang tải dữ liệu...</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
     </main>
 
-    <!-- Footer -->
-    <footer class="border-t border-brand-border bg-brand-card py-4 px-6 text-center text-xs text-gray-500">
-        <p>© 2026 Alpha Signal Enterprise. All Trading Signals originate from Automated Quantitative Analysis.</p>
-    </footer>
-
-    <!-- Frontend JS Logic -->
     <script>
         let tvWidget = null;
         let rawSignalsData = [];
-        let currentFilter = 'ALL';
 
         function loadTradingViewWidget(symbol = "BINANCE:BTCUSDT", timeframe = "15") {
             document.getElementById('active-symbol-tag').innerText = symbol;
@@ -261,135 +168,65 @@
                 "autosize": true,
                 "symbol": symbol,
                 "interval": timeframe,
-                "timezone": "Asia/Ho_Chi_Minh",
                 "theme": "dark",
                 "style": "1",
                 "locale": "vi",
                 "toolbar_bg": "#181A20",
                 "enable_publishing": false,
-                "allow_symbol_change": true,
                 "container_id": "tradingview_chart",
-                "hide_side_toolbar": false,
                 "studies": ["RSI@tv-basicstudies", "MASimple@tv-basicstudies"]
             });
         }
 
-        function switchChart(symbol, tf, entry1, sl) {
-            let interval = "15";
-            if (tf === "H1") interval = "60";
-            if (tf === "H4") interval = "240";
-            if (tf === "D1") interval = "D";
-
-            const tvSymbol = `BINANCE:${symbol.replace('#', '')}`;
-            loadTradingViewWidget(tvSymbol, interval);
-
-            // Tự động điền giá vào công cụ Risk Calculator
-            if (entry1) document.getElementById('calc-entry').value = entry1.replace(',', '');
-            if (sl) document.getElementById('calc-sl').value = sl.replace(',', '');
-        }
-
-        function setFilter(filterType) {
-            currentFilter = filterType;
-            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('filter-btn-active'));
-            const activeBtn = document.getElementById(`btn-filter-${filterType}`);
-            if (activeBtn) activeBtn.classList.add('filter-btn-active');
-            renderSignalTable();
-        }
-
-        function getFilteredSignals() {
-            if (currentFilter === 'ALL') return rawSignalsData;
-            if (['M15', 'H1', 'H4'].includes(currentFilter)) {
-                return rawSignalsData.filter(sig => sig.tf === currentFilter);
-            }
-            if (['LONG', 'SHORT'].includes(currentFilter)) {
-                return rawSignalsData.filter(sig => sig.position === currentFilter);
-            }
-            return rawSignalsData;
+        function switchChart(symbol, entry1, sl) {
+            loadTradingViewWidget(`BINANCE:${symbol}`, "15");
+            if (entry1) document.getElementById('calc-entry').value = entry1.replace(/,/g, '');
+            if (sl) document.getElementById('calc-sl').value = sl.replace(/,/g, '');
         }
 
         function renderSignalTable() {
-            const filteredSignals = getFilteredSignals();
-            document.getElementById('total-signals-count').innerText = filteredSignals.length;
-
             const tbody = document.getElementById('signal-table-body');
-            if (filteredSignals.length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="8" class="p-8 text-center text-gray-500">
-                            Không tìm thấy tín hiệu thuộc bộ lọc [${currentFilter}].
-                        </td>
-                    </tr>`;
+            if (rawSignalsData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-gray-500">Chưa có tín hiệu mới.</td></tr>`;
                 return;
             }
 
             let html = '';
-            filteredSignals.forEach(sig => {
+            rawSignalsData.forEach(sig => {
                 const isLong = sig.position === 'LONG';
-                const posClass = isLong 
-                    ? 'bg-brand-long/10 text-brand-long border-brand-long/20' 
-                    : 'bg-brand-short/10 text-brand-short border-brand-short/20';
-                const posIcon = isLong ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down';
-                const tfBg = sig.tf === 'M15' ? 'text-blue-400 bg-blue-500/10' : (sig.tf === 'H1' ? 'text-purple-400 bg-purple-500/10' : 'text-emerald-400 bg-emerald-500/10');
+                const posClass = isLong ? 'bg-brand-long/10 text-brand-long' : 'bg-brand-short/10 text-brand-short';
                 
                 html += `
-                <tr onclick="switchChart('${sig.symbol}', '${sig.tf}', '${sig.entry1}', '${sig.sl}')" class="hover:bg-gray-800/50 cursor-pointer transition group">
-                    <td class="p-4">
-                        <div class="flex items-center space-x-2">
-                            <span class="font-bold text-white text-sm group-hover:text-brand-accent transition">#${sig.symbol}</span>
-                            <span class="${tfBg} border border-current px-1.5 py-0.5 rounded font-mono text-[10px]">${sig.tf}</span>
-                        </div>
-                    </td>
-                    <td class="p-4">
-                        <span class="${posClass} border font-bold px-2.5 py-1 rounded-md text-[11px] inline-flex items-center gap-1">
-                            <i class="fa-solid ${posIcon}"></i> ${sig.position}
-                        </span>
-                    </td>
+                <tr onclick="switchChart('${sig.symbol}', '${sig.entry1}', '${sig.sl}')" class="hover:bg-gray-800/50 cursor-pointer transition">
+                    <td class="p-4 font-bold text-white">#${sig.symbol} <span class="text-[10px] bg-blue-500/10 text-blue-400 px-1 rounded">${sig.tf}</span></td>
+                    <td class="p-4"><span class="${posClass} px-2 py-1 rounded font-bold text-[11px]">${sig.position}</span></td>
                     <td class="p-4 font-mono">
-                        <div class="text-white font-medium">${sig.entry1} <span class="text-xs text-gray-500">(40%)</span></div>
-                        <div class="text-gray-400 text-[11px]">${sig.entry2} <span class="text-xs text-gray-500">(60%)</span></div>
+                        <div class="text-white">${sig.entry1}</div>
+                        <div class="text-gray-500 text-[11px]">DCA: ${sig.entry2}</div>
                     </td>
-                    <td class="p-4 font-mono text-brand-long font-medium">
-                        ${sig.tp}
-                    </td>
-                    <td class="p-4 font-mono text-brand-short font-medium">
-                        ${sig.sl}
-                    </td>
-                    <td class="p-4">
-                        <span class="text-brand-accent font-bold font-mono">${sig.leverage}</span>
-                        <span class="text-gray-400 text-[11px] block">Risk: ${sig.risk}</span>
-                    </td>
-                    <td class="p-4 text-gray-400 font-mono text-[11px]">
-                        ${sig.time}
-                    </td>
-                    <td class="p-4 text-right" onclick="event.stopPropagation();">
-                        <a href="https://www.binance.com/en/futures/${sig.symbol}" target="_blank" class="bg-brand-dark hover:bg-gray-700 text-white border border-brand-border px-3 py-1.5 rounded-md text-xs transition inline-flex items-center gap-1">
-                            Trade <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
-                        </a>
-                    </td>
+                    <td class="p-4 font-mono text-brand-long">${sig.tp}</td>
+                    <td class="p-4 font-mono text-brand-short">${sig.sl}</td>
+                    <td class="p-4 font-mono text-brand-accent">${sig.leverage}</td>
+                    <td class="p-4 text-gray-400 text-[11px]">${sig.time}</td>
                 </tr>`;
             });
-
             tbody.innerHTML = html;
         }
 
         async function calculatePositionRisk() {
-            const balance = document.getElementById('calc-balance').value;
-            const risk = document.getElementById('calc-risk').value;
-            const entry = document.getElementById('calc-entry').value;
-            const sl = document.getElementById('calc-sl').value;
-            const lev = document.getElementById('calc-leverage').value;
+            const bodyData = {
+                account_balance: document.getElementById('calc-balance').value,
+                risk_percent: document.getElementById('calc-risk').value,
+                entry_price: document.getElementById('calc-entry').value,
+                sl_price: document.getElementById('calc-sl').value,
+                leverage: document.getElementById('calc-leverage').value
+            };
 
             try {
                 const res = await fetch('/api/calculate-risk', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        account_balance: balance,
-                        risk_percent: risk,
-                        entry_price: entry,
-                        sl_price: sl,
-                        leverage: lev
-                    })
+                    body: JSON.stringify(bodyData)
                 });
                 const result = await res.json();
                 if (result.status === 'success') {
@@ -397,29 +234,25 @@
                     document.getElementById('out-pos-size').innerText = `$${result.data.total_position_size}`;
                     document.getElementById('out-margin').innerText = `$${result.data.required_margin}`;
                 }
-            } catch (err) {
-                console.error("Lỗi tính toán Risk:", err);
-            }
+            } catch (err) {}
         }
 
         async function fetchSignals() {
             try {
                 const response = await fetch('/api/signals');
                 const result = await response.json();
-                
-                if (result.status === 'success' && result.data) {
+                if (result.status === 'success') {
                     rawSignalsData = result.data;
                     renderSignalTable();
                 }
-            } catch (err) {
-                console.error("Lỗi cập nhật tín hiệu:", err);
-            }
+            } catch (err) {}
         }
 
         window.addEventListener('DOMContentLoaded', () => {
             loadTradingViewWidget("BINANCE:BTCUSDT", "15");
             fetchSignals();
-            setInterval(fetchSignals, 5000);
+            // Polling giãn ra 10s (10000ms) để tải êm hơn, không bị lag web
+            setInterval(fetchSignals, 10000); 
         });
     </script>
 </body>
