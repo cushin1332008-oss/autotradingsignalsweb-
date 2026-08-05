@@ -1,158 +1,172 @@
-"""
-autoscreener.py — Worker chạy ngầm phân tích và gửi cảnh báo
-------------------------------------------------------------
-"""
-
-import os
-import json
 import time
 import requests
 import pandas as pd
-import firebase_admin
-from firebase_admin import credentials, db
-from apscheduler.schedulers.blocking import BlockingScheduler
 from datetime import datetime
-from zoneinfo import ZoneInfo
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
 from indicators import (
-    TIMEFRAMES, analyze_timeframe, generate_all_signals, calc_position_sizing
+    TIMEFRAMES, 
+    calculate_technical_indicators, 
+    get_market_trend, 
+    check_candlestick_patterns
 )
 
-VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+# Cấu hình Token & ID Telegram của bạn
+TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+TELEGRAM_CHAT_ID = "YOUR_TELEGRAM_CHAT_ID"
+WEBHOOK_URL = "http://127.0.0.1:5000/api/webhook"
 
-def now_vn_str():
-    return datetime.now(VN_TZ).strftime('%H:%M:%S %d/%m/%Y')
+SYMBOLS = [
+    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", 
+    "ADAUSDT", "AVAXUSDT", "DOGEUSDT", "LINKUSDT", "NEARUSDT"
+]
 
-secret_path = "/etc/secrets/firebase.json"
-env_cred = os.environ.get("FIREBASE_CREDENTIALS")
-local_path = "serviceAccountKey.json"
-
-if os.path.exists(secret_path):
-    cred = credentials.Certificate(secret_path)
-elif env_cred:
-    cred = credentials.Certificate(json.loads(env_cred))
-elif os.path.exists(local_path):
-    cred = credentials.Certificate(local_path)
-else:
-    raise RuntimeError("Không tìm thấy Firebase Credentials.")
-
-if not firebase_admin._apps:
-    firebase_admin.initialize_app(cred, {
-        'databaseURL': 'https://webtrade-85ca8-default-rtdb.asia-southeast1.firebasedatabase.app'
-    })
-
-ref = db.reference('signals')
-session = requests.Session()
-
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-CUSTOM_LEVERAGE = int(os.environ.get("DEFAULT_LEVERAGE", "50"))
-
-_last_alerted = {}
-
-def send_telegram_alert(item):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        return
+def fetch_klines(symbol, interval, limit=250):
+    """Lấy dữ liệu nến Futures từ Binance API"""
     try:
-        emoji = "🟢 LONG" if "BUY" in item["signal"] else "🔴 SHORT"
-        text = (
-            f"{emoji} <b>#{item['symbol']}</b> | {item['trade_timeframe']}\n"
-            f"🎯 Bậc tin cậy: <b>{item['confluence_pct']}%</b>\n\n"
-            f"📍 <b>Entry 1 (40% Vol):</b> <code>{item['entry_1']}</code>\n"
-            f"📍 <b>Entry DCA (60% Vol):</b> <code>{item['entry_dca']}</code>\n"
-            f"🛑 <b>Stop Loss:</b> <code>{item['stop_loss']}</code>\n\n"
-            f"🎯 <b>TP1 (50% Vol):</b> <code>{item['tp1']}</code>\n"
-            f"🎯 <b>TP2 (30% Vol):</b> <code>{item['tp2']}</code>\n"
-            f"🎯 <b>TP3 (20% Vol):</b> <code>{item['tp3']}</code>\n\n"
-            f"🛡️ <b>Rủi ro (Risk):</b> {item['risk_pct']}% TK (${item['risk_usdt']})\n"
-            f"⚡ <b>Đòn bẩy:</b> {item['leverage']}x | <b>Margin ký quỹ (TK $1000):</b> ${item['margin_usdt']} ({item['margin_pct']}%)\n"
-            f"💡 <b>Lý do:</b> {item['reason']}\n"
-            f"🕒 <i>{item['time_str']}</i>"
-        )
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        session.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=10)
-    except Exception as e:
-        print(f"[⚠️ TELEGRAM ERROR] {item.get('symbol')}: {e}")
-
-def get_klines(symbol: str, interval: str, limit: int = 200):
-    try:
-        res = session.get(
-            "https://api.binance.com/api/v3/klines", 
-            params={"symbol": symbol, "interval": interval, "limit": limit}, 
-            timeout=10
-        )
-        raw = res.json()
-        if not isinstance(raw, list) or len(raw) < 60:
-            return None
-        df = pd.DataFrame(raw, columns=[
-            "open_time", "open", "high", "low", "close", "volume",
-            "close_time", "quote_asset_volume", "number_of_trades",
-            "taker_buy_base_asset_volume", "taker_buy_quote_asset_volume", "ignore"
+        url = f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval={interval}&limit={limit}"
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        
+        df = pd.DataFrame(data, columns=[
+            'timestamp', 'open', 'high', 'low', 'close', 'volume',
+            'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore'
         ])
-        for col in ["open", "high", "low", "close", "volume"]:
+        for col in ['open', 'high', 'low', 'close', 'volume']:
             df[col] = df[col].astype(float)
         return df
+    except Exception as e:
+        print(f"Lỗi tải dữ liệu {symbol} [{interval}]: {e}")
+        return pd.DataFrame()
+
+def send_telegram_alert(message):
+    """Gửi thông báo Telegram formatted HTML"""
+    if TELEGRAM_BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
+        return
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}
+        requests.post(url, json=payload, timeout=5)
+    except Exception as e:
+        print(f"Lỗi gửi Telegram: {e}")
+
+def send_to_dashboard(signal_data):
+    """Gửi dữ liệu trực tiếp về Dashboard Web qua REST API"""
+    try:
+        requests.post(WEBHOOK_URL, json=signal_data, timeout=5)
     except Exception:
-        return None
+        pass
 
-def analyze_symbol_tf(symbol):
-    tf_results = {}
-    for tf_label, interval in TIMEFRAMES.items():
-        df = get_klines(symbol, interval)
-        res = analyze_timeframe(df)
-        if res:
-            tf_results[tf_label] = res
-    return tf_results
-
-def run_screener():
-    print(f"\n[🚀 SCREENER] Bắt đầu quét lúc: {now_vn_str()}")
-    watchlist = ["ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "NEARUSDT", "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT"]
-    signals_to_upload = {}
-
-    btc_tf_results = analyze_symbol_tf("BTCUSDT")
-    btc_signals = generate_all_signals(btc_tf_results, is_btc=True)
+def get_btc_bias():
+    """Xác định định hướng xu hướng chính từ BTC trên khung H4 & D1"""
+    df_h4 = fetch_klines("BTCUSDT", TIMEFRAMES["H4"])
+    df_d1 = fetch_klines("BTCUSDT", TIMEFRAMES["D1"])
     
-    for profile_key, signal in btc_signals.items():
-        sizing = calc_position_sizing(signal["entry_1"], signal["stop_loss"], signal["confluence_pct"], profile_key, custom_leverage=CUSTOM_LEVERAGE)
-        signals_to_upload[f"BTCUSDT_{profile_key}"] = {
-            "symbol": "BTCUSDT", **signal, **sizing, "time_str": now_vn_str()
-        }
+    if df_h4.empty or df_d1.empty:
+        return "NEUTRAL"
 
-    def process_altcoin(symbol):
-        tf_results = analyze_symbol_tf(symbol)
-        signals = generate_all_signals(tf_results, btc_context=btc_tf_results, is_btc=False)
-        res = {}
-        for profile_key, signal in signals.items():
-            sizing = calc_position_sizing(signal["entry_1"], signal["stop_loss"], signal["confluence_pct"], profile_key, custom_leverage=CUSTOM_LEVERAGE)
-            res[f"{symbol}_{profile_key}"] = {
-                "symbol": symbol, **signal, **sizing, "time_str": now_vn_str()
-            }
-        return res
+    df_h4 = calculate_technical_indicators(df_h4)
+    df_d1 = calculate_technical_indicators(df_d1)
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(process_altcoin, sym): sym for sym in watchlist}
-        for future in as_completed(futures):
-            try:
-                signals_to_upload.update(future.result())
-            except Exception as e:
-                print(f"[⚠️ ERROR] {e}")
+    trend_h4 = get_market_trend(df_h4)
+    trend_d1 = get_market_trend(df_d1)
 
-    ref.set(signals_to_upload)
-    print(f"[🔥 FIREBASE] Đã cập nhật {len(signals_to_upload)} tín hiệu tuân thủ Trend BTC.")
+    if trend_h4 == "BULLISH" and trend_d1 in ["BULLISH", "SIDEWAYS"]:
+        return "BULLISH"
+    elif trend_h4 == "BEARISH" and trend_d1 in ["BEARISH", "SIDEWAYS"]:
+        return "BEARISH"
+    return "NEUTRAL"
 
-    global _last_alerted
-    for key, item in signals_to_upload.items():
-        if _last_alerted.get(key) != item["signal"]:
-            send_telegram_alert(item)
-    _last_alerted = {key: item["signal"] for key, item in signals_to_upload.items()}
+def process_screener():
+    """Hàm quét toàn bộ danh mục theo logic 3 Trade Profiles"""
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Đang tiến hành quét tín hiệu...")
+    btc_bias = get_btc_bias()
+
+    for symbol in SYMBOLS:
+        for tf_key in ["M15", "H1", "H4"]:
+            interval = TIMEFRAMES[tf_key]
+            df = fetch_klines(symbol, interval)
+            
+            if df.empty or len(df) < 50:
+                continue
+
+            df = calculate_technical_indicators(df)
+            last_row = df.iloc[-1]
+            rsi = last_row['RSI']
+            atr = last_row['ATR'] if 'ATR' in last_row else (last_row['close'] * 0.01)
+            pattern = check_candlestick_patterns(df)
+            curr_price = last_row['close']
+
+            position = None
+
+            # 1. Điều kiện vào lệnh LONG (Ưu tiên khi BTC Bullish/Neutral)
+            if btc_bias != "BEARISH" and rsi < 38 and pattern in ["BULLISH_ENGULFING", "HAMMER"]:
+                position = "LONG"
+                entry_1 = curr_price
+                entry_2 = round(curr_price - (1.2 * atr), 4)
+                tp = round(curr_price + (2.5 * atr), 4)
+                sl = round(entry_2 - (1.0 * atr), 4)
+
+            # 2. Điều kiện vào lệnh SHORT (Ưu tiên khi BTC Bearish/Neutral)
+            elif btc_bias != "BULLISH" and rsi > 62 and pattern in ["BEARISH_ENGULFING", "SHOOTING_STAR"]:
+                position = "SHORT"
+                entry_1 = curr_price
+                entry_2 = round(curr_price + (1.2 * atr), 4)
+                tp = round(curr_price - (2.5 * atr), 4)
+                sl = round(entry_2 + (1.0 * atr), 4)
+
+            if position:
+                # Quản trị rủi ro & Đòn bẩy phân tầng theo Timeframe
+                if tf_key == "M15":
+                    profile, leverage, risk = "SCALP", "20x - 50x", "1.0%"
+                elif tf_key == "H1":
+                    profile, leverage, risk = "SWING", "10x - 20x", "2.0%"
+                else:
+                    profile, leverage, risk = "POSITION", "5x - 10x", "3.0%"
+
+                now_time = datetime.now().strftime("%H:%M:%S")
+
+                signal_payload = {
+                    "symbol": symbol,
+                    "tf": tf_key,
+                    "profile": profile,
+                    "position": position,
+                    "entry1": entry_1,
+                    "entry2": entry_2,
+                    "tp": tp,
+                    "sl": sl,
+                    "leverage": leverage,
+                    "risk": risk,
+                    "pattern": pattern,
+                    "time": now_time
+                }
+
+                # Đẩy sang Dashboard & Telegram
+                send_to_dashboard(signal_payload)
+
+                telegram_msg = (
+                    f"🎯 <b>TÍN HIỆU {position} | #{symbol} ({tf_key})</b>\n"
+                    f"⚙️ <b>Chiến lược:</b> {profile}\n"
+                    f"🔹 <b>Nến đảo chiều:</b> {pattern}\n\n"
+                    f"📍 <b>Entry DCA 1 (40%):</b> {entry_1}\n"
+                    f"📍 <b>Entry DCA 2 (60%):</b> {entry_2}\n"
+                    f"🎯 <b>Take Profit (TP):</b> {tp}\n"
+                    f"🛑 <b>Stop Loss (SL):</b> {sl}\n\n"
+                    f"⚡ <b>Đòn bẩy:</b> {leverage} | 🛡️ <b>Risk:</b> {risk}\n"
+                    f"🕒 <b>Thời gian:</b> {now_time}"
+                )
+                send_telegram_alert(telegram_msg)
+                print(f" -> Phát hiện tín hiệu: {symbol} {position} ({tf_key})")
+
+            time.sleep(0.5)
+
+def run_screener_loop():
+    print("=== ĐÃ KÍCH HOẠT HỆ THỐNG SCREENER TỰ ĐỘNG ===")
+    while True:
+        try:
+            process_screener()
+            time.sleep(60) # Tần suất quét: 60 giây / lượt
+        except Exception as err:
+            print(f"Lỗi trong quá trình quét: {err}")
+            time.sleep(10)
 
 if __name__ == "__main__":
-    print(f"[✅ INITIALIZE] Khởi động Auto Screener ({now_vn_str()})")
-    run_screener()
-    scheduler = BlockingScheduler()
-    scheduler.add_job(run_screener, 'interval', minutes=5)
-    try:
-        scheduler.start()
-    except (KeyboardInterrupt, SystemExit):
-        print("\n[🛑 STOPPED] Đã dừng Auto Screener.")
+    run_screener_loop()
