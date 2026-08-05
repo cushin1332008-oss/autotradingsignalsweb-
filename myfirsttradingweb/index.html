@@ -75,9 +75,9 @@
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex items-center justify-between">
                 <div>
-                    <p class="text-xs text-gray-400 font-medium uppercase">Tín hiệu 24h</p>
-                    <p class="text-2xl font-bold text-white mt-1">24</p>
-                    <p class="text-xs text-emerald-400 mt-1"><i class="fa-solid fa-arrow-up"></i> +12% so với hôm qua</p>
+                    <p class="text-xs text-gray-400 font-medium uppercase">Tín hiệu nhận được</p>
+                    <p id="total-signals-count" class="text-2xl font-bold text-white mt-1">0</p>
+                    <p class="text-xs text-emerald-400 mt-1"><i class="fa-solid fa-sync fa-spin"></i> Live Auto Update</p>
                 </div>
                 <div class="p-3 bg-gray-800/50 rounded-lg text-brand-accent text-xl">
                     <i class="fa-solid fa-satellite-dish"></i>
@@ -109,7 +109,7 @@
             <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex items-center justify-between">
                 <div>
                     <p class="text-xs text-gray-400 font-medium uppercase">Khuyến nghị Risk</p>
-                    <p class="text-2xl font-bold text-brand-accent mt-1">1.5% - 2%</p>
+                    <p class="text-2xl font-bold text-brand-accent mt-1">1.0% - 3.0%</p>
                     <p class="text-xs text-gray-400 mt-1">Margin max: 10% / Lệnh</p>
                 </div>
                 <div class="p-3 bg-yellow-500/10 rounded-lg text-brand-accent text-xl">
@@ -118,71 +118,12 @@
             </div>
         </div>
 
-        <!-- Middle Section: Chart & Quick Stats -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Market Overview Chart -->
-            <div class="lg:col-span-2 bg-brand-card border border-brand-border rounded-xl p-5">
-                <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                        <i class="fa-solid fa-chart-area text-brand-accent"></i> Xu Hướng & Tần Suất Tín Hiệu
-                    </h2>
-                    <span class="text-xs text-gray-400">Cập nhật 1 phút trước</span>
-                </div>
-                <div class="h-64">
-                    <canvas id="signalsChart"></canvas>
-                </div>
-            </div>
-
-            <!-- Strategy Profile Breakdown -->
-            <div class="bg-brand-card border border-brand-border rounded-xl p-5 flex flex-col justify-between">
-                <div>
-                    <h2 class="text-sm font-bold text-white uppercase tracking-wider mb-4 flex items-center gap-2">
-                        <i class="fa-solid fa-sliders text-brand-accent"></i> Cấu Hình Chiến Lược
-                    </h2>
-                    <div class="space-y-4">
-                        <div class="p-3 bg-brand-dark rounded-lg border border-brand-border">
-                            <div class="flex justify-between items-center mb-1">
-                                <span class="text-xs font-bold text-white">SCALP (M15)</span>
-                                <span class="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">Risk: 1%</span>
-                            </div>
-                            <p class="text-xs text-gray-400">Đòn bẩy: 20x - 50x | Filter: RSI Oversold + Hammer</p>
-                        </div>
-
-                        <div class="p-3 bg-brand-dark rounded-lg border border-brand-border">
-                            <div class="flex justify-between items-center mb-1">
-                                <span class="text-xs font-bold text-white">SWING (H1)</span>
-                                <span class="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded">Risk: 2%</span>
-                            </div>
-                            <p class="text-xs text-gray-400">Đòn bẩy: 10x - 20x | Filter: H4/D1 Trend Đồng thuận</p>
-                        </div>
-
-                        <div class="p-3 bg-brand-dark rounded-lg border border-brand-border">
-                            <div class="flex justify-between items-center mb-1">
-                                <span class="text-xs font-bold text-white">POSITION (H4)</span>
-                                <span class="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded">Risk: 3%</span>
-                            </div>
-                            <p class="text-xs text-gray-400">Đòn bẩy: 5x - 10x | Filter: Xu hướng D1 cực mạnh</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <!-- Table Section: Realtime Signals -->
         <div class="bg-brand-card border border-brand-border rounded-xl overflow-hidden">
-            <!-- Table Header Actions -->
             <div class="p-4 border-b border-brand-border flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div class="flex items-center gap-2">
-                    <h2 class="text-base font-bold text-white">Tín Hiệu Gần Đây</h2>
-                    <span class="bg-brand-border text-xs px-2 py-0.5 rounded text-gray-300 font-mono">Live</span>
-                </div>
-
-                <!-- Filter Buttons -->
-                <div class="flex items-center space-x-2 text-xs">
-                    <button class="px-3 py-1.5 rounded-lg bg-brand-accent text-black font-semibold">Tất Cả</button>
-                    <button class="px-3 py-1.5 rounded-lg bg-brand-dark text-gray-400 hover:text-white border border-brand-border transition">M15 (Scalp)</button>
-                    <button class="px-3 py-1.5 rounded-lg bg-brand-dark text-gray-400 hover:text-white border border-brand-border transition">H1 (Swing)</button>
-                    <button class="px-3 py-1.5 rounded-lg bg-brand-dark text-gray-400 hover:text-white border border-brand-border transition">H4 (Position)</button>
+                    <h2 class="text-base font-bold text-white">Tín Hiệu Realtime</h2>
+                    <span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs px-2 py-0.5 rounded font-mono">LIVE</span>
                 </div>
             </div>
 
@@ -201,78 +142,12 @@
                             <th class="p-4 text-right">Thao Tác</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-brand-border">
-                        <!-- Row 1: Long Signal -->
-                        <tr class="hover:bg-gray-800/30 transition">
-                            <td class="p-4">
-                                <div class="flex items-center space-x-2">
-                                    <span class="font-bold text-white text-sm">ETHUSDT</span>
-                                    <span class="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono text-[10px]">M15</span>
-                                </div>
-                            </td>
-                            <td class="p-4">
-                                <span class="bg-brand-long/10 text-brand-long border border-brand-long/20 font-bold px-2.5 py-1 rounded-md text-[11px] inline-flex items-center gap-1">
-                                    <i class="fa-solid fa-arrow-trend-up"></i> LONG
-                                </span>
-                            </td>
-                            <td class="p-4 font-mono">
-                                <div class="text-white font-medium">3,420.50 <span class="text-xs text-gray-500">(40%)</span></div>
-                                <div class="text-gray-400 text-[11px]">3,390.00 <span class="text-xs text-gray-500">(60%)</span></div>
-                            </td>
-                            <td class="p-4 font-mono text-brand-long font-medium">
-                                3,550.00
-                            </td>
-                            <td class="p-4 font-mono text-brand-short font-medium">
-                                3,350.00
-                            </td>
-                            <td class="p-4">
-                                <span class="text-brand-accent font-bold font-mono">25x</span>
-                                <span class="text-gray-400 text-[11px] block">Risk: 1.5%</span>
-                            </td>
-                            <td class="p-4 text-gray-400 font-mono text-[11px]">
-                                18:42:10
-                            </td>
-                            <td class="p-4 text-right">
-                                <a href="https://www.binance.com/en/futures/ETHUSDT" target="_blank" class="bg-brand-dark hover:bg-gray-700 text-white border border-brand-border px-3 py-1.5 rounded-md text-xs transition">
-                                    Trade <i class="fa-solid fa-arrow-up-right-from-square text-[10px] ml-1"></i>
-                                </a>
-                            </td>
-                        </tr>
-
-                        <!-- Row 2: Short Signal -->
-                        <tr class="hover:bg-gray-800/30 transition">
-                            <td class="p-4">
-                                <div class="flex items-center space-x-2">
-                                    <span class="font-bold text-white text-sm">SOLUSDT</span>
-                                    <span class="bg-purple-500/10 text-purple-400 border border-purple-500/20 px-1.5 py-0.5 rounded font-mono text-[10px]">H1</span>
-                                </div>
-                            </td>
-                            <td class="p-4">
-                                <span class="bg-brand-short/10 text-brand-short border border-brand-short/20 font-bold px-2.5 py-1 rounded-md text-[11px] inline-flex items-center gap-1">
-                                    <i class="fa-solid fa-arrow-trend-down"></i> SHORT
-                                </span>
-                            </td>
-                            <td class="p-4 font-mono">
-                                <div class="text-white font-medium">145.20 <span class="text-xs text-gray-500">(40%)</span></div>
-                                <div class="text-gray-400 text-[11px]">148.00 <span class="text-xs text-gray-500">(60%)</span></div>
-                            </td>
-                            <td class="p-4 font-mono text-brand-long font-medium">
-                                132.50
-                            </td>
-                            <td class="p-4 font-mono text-brand-short font-medium">
-                                151.00
-                            </td>
-                            <td class="p-4">
-                                <span class="text-brand-accent font-bold font-mono">15x</span>
-                                <span class="text-gray-400 text-[11px] block">Risk: 2.0%</span>
-                            </td>
-                            <td class="p-4 text-gray-400 font-mono text-[11px]">
-                                17:15:05
-                            </td>
-                            <td class="p-4 text-right">
-                                <a href="https://www.binance.com/en/futures/SOLUSDT" target="_blank" class="bg-brand-dark hover:bg-gray-700 text-white border border-brand-border px-3 py-1.5 rounded-md text-xs transition">
-                                    Trade <i class="fa-solid fa-arrow-up-right-from-square text-[10px] ml-1"></i>
-                                </a>
+                    <tbody id="signal-table-body" class="divide-y divide-brand-border">
+                        <!-- Tín hiệu thật sẽ tự động nạp vào đây qua API -->
+                        <tr>
+                            <td colspan="8" class="p-8 text-center text-gray-500">
+                                <i class="fa-solid fa-spinner fa-spin text-lg mb-2 block"></i>
+                                Đang quét tín hiệu realtime từ hệ thống...
                             </td>
                         </tr>
                     </tbody>
@@ -286,32 +161,85 @@
         <p>© 2026 Alpha Signal Engine. All Trading Signals originate from Automated Quantitative Analysis.</p>
     </footer>
 
-    <!-- Chart Config JavaScript -->
+    <!-- Fetch Realtime Signals JS -->
     <script>
-        const ctx = document.getElementById('signalsChart').getContext('2d');
-        new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00'],
-                datasets: [{
-                    label: 'Số tín hiệu phát hiện',
-                    data: [3, 5, 2, 8, 12, 6],
-                    borderColor: '#FCD535',
-                    backgroundColor: 'rgba(252, 213, 53, 0.05)',
-                    fill: true,
-                    tension: 0.4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: { grid: { color: '#2B313A' }, ticks: { color: '#848E9C' } },
-                    y: { grid: { color: '#2B313A' }, ticks: { color: '#848E9C' } }
+        async function fetchSignals() {
+            try {
+                const response = await fetch('/api/signals');
+                const result = await response.json();
+                
+                if (result.status === 'success' && result.data) {
+                    const signals = result.data;
+                    document.getElementById('total-signals-count').innerText = signals.length;
+                    
+                    const tbody = document.getElementById('signal-table-body');
+                    if (signals.length === 0) {
+                        tbody.innerHTML = `
+                            <tr>
+                                <td colspan="8" class="p-8 text-center text-gray-500">
+                                    Chưa phát hiện tín hiệu mới. Bot đang tiếp tục quét thị trường...
+                                </td>
+                            </tr>`;
+                        return;
+                    }
+                    
+                    let html = '';
+                    signals.forEach(sig => {
+                        const isLong = sig.position === 'LONG';
+                        const posClass = isLong 
+                            ? 'bg-brand-long/10 text-brand-long border-brand-long/20' 
+                            : 'bg-brand-short/10 text-brand-short border-brand-short/20';
+                        const posIcon = isLong ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down';
+                        const tfBg = sig.tf === 'M15' ? 'text-blue-400 bg-blue-500/10' : (sig.tf === 'H1' ? 'text-purple-400 bg-purple-500/10' : 'text-emerald-400 bg-emerald-500/10');
+                        
+                        html += `
+                        <tr class="hover:bg-gray-800/30 transition">
+                            <td class="p-4">
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-bold text-white text-sm">#${sig.symbol}</span>
+                                    <span class="${tfBg} border border-current px-1.5 py-0.5 rounded font-mono text-[10px]">${sig.tf}</span>
+                                </div>
+                            </td>
+                            <td class="p-4">
+                                <span class="${posClass} border font-bold px-2.5 py-1 rounded-md text-[11px] inline-flex items-center gap-1">
+                                    <i class="fa-solid ${posIcon}"></i> ${sig.position}
+                                </span>
+                            </td>
+                            <td class="p-4 font-mono">
+                                <div class="text-white font-medium">${sig.entry1} <span class="text-xs text-gray-500">(40%)</span></div>
+                                <div class="text-gray-400 text-[11px]">${sig.entry2} <span class="text-xs text-gray-500">(60%)</span></div>
+                            </td>
+                            <td class="p-4 font-mono text-brand-long font-medium">
+                                ${sig.tp}
+                            </td>
+                            <td class="p-4 font-mono text-brand-short font-medium">
+                                ${sig.sl}
+                            </td>
+                            <td class="p-4">
+                                <span class="text-brand-accent font-bold font-mono">${sig.leverage}</span>
+                                <span class="text-gray-400 text-[11px] block">Risk: ${sig.risk}</span>
+                            </td>
+                            <td class="p-4 text-gray-400 font-mono text-[11px]">
+                                ${sig.time}
+                            </td>
+                            <td class="p-4 text-right">
+                                <a href="https://www.binance.com/en/futures/${sig.symbol}" target="_blank" class="bg-brand-dark hover:bg-gray-700 text-white border border-brand-border px-3 py-1.5 rounded-md text-xs transition">
+                                    Trade <i class="fa-solid fa-arrow-up-right-from-square text-[10px] ml-1"></i>
+                                </a>
+                            </td>
+                        </tr>`;
+                    });
+                    
+                    tbody.innerHTML = html;
                 }
+            } catch (err) {
+                console.error("Lỗi cập nhật tín hiệu:", err);
             }
-        });
+        }
+
+        // Tự động tải lại danh sách tín hiệu mỗi 5 giây
+        fetchSignals();
+        setInterval(fetchSignals, 5000);
     </script>
 </body>
 </html>
