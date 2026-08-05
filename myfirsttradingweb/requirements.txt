@@ -1,7 +1,4 @@
-Flask
-gunicorn
-pandas
-pandas_ta
-requests
-firebase-admin
-apscheduler
+Flask==3.0.0
+requests==2.31.0
+pandas==2.1.4
+gunicorn==21.2.0
