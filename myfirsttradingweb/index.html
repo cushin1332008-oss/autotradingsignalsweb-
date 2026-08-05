@@ -71,7 +71,7 @@
     <!-- Main Content -->
     <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
 
-        <!-- Thống kê nhanh / Hướng dẫn chiến lược -->
+        <!-- Thống kê nhanh -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex items-center space-x-4">
                 <div class="w-12 h-12 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 text-xl font-bold">
@@ -89,22 +89,22 @@
                 </div>
                 <div>
                     <h3 class="text-xs text-gray-400 font-semibold uppercase">Đòn Bẩy Khuyến Nghị</h3>
-                    <p class="text-sm font-bold text-white mt-0.5">Linh Hoạt 50x - 500x</p>
+                    <p class="text-sm font-bold text-white mt-0.5">Linh Hoạt 20x - 200x</p>
                 </div>
             </div>
 
             <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex items-center space-x-4">
                 <div class="w-12 h-12 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 text-xl font-bold">
-                    <i class="fa-solid fa-bolt-lightning"></i>
+                    <i class="fa-solid fa-clock"></i>
                 </div>
                 <div>
-                    <h3 class="text-xs text-gray-400 font-semibold uppercase">Phạm Vi Quét Tự Động</h3>
-                    <p class="text-sm font-bold text-white mt-0.5">Top 100 Coin (M5, M15, H1, H4)</p>
+                    <h3 class="text-xs text-gray-400 font-semibold uppercase">Múi Giờ Hệ Thống</h3>
+                    <p class="text-sm font-bold text-emerald-400 mt-0.5">Giờ Việt Nam (GMT+7)</p>
                 </div>
             </div>
         </div>
 
-        <!-- Bảng Tín Hiệu Chuyên Sâu (Full View) -->
+        <!-- Bảng Tín Hiệu Live -->
         <div class="bg-brand-card border border-brand-border rounded-xl overflow-hidden shadow-xl">
             <div class="p-4 sm:p-5 border-b border-brand-border flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div class="flex items-center gap-2">
@@ -127,7 +127,7 @@
                             <th class="p-4">Take Profit (TP)</th>
                             <th class="p-4">Stop Loss (SL)</th>
                             <th class="p-4">Đòn Bẩy</th>
-                            <th class="p-4">Thời Gian</th>
+                            <th class="p-4">Thời Gian (GMT+7)</th>
                         </tr>
                     </thead>
                     <tbody id="signal-table-body" class="divide-y divide-brand-border">
@@ -148,7 +148,7 @@
                 <tr>
                     <td colspan="7" class="p-12 text-center">
                         <div class="text-gray-400 font-semibold mb-1">📭 Hiện chưa có tín hiệu mới từ Top 100 Coin</div>
-                        <div class="text-gray-500 text-[11px]">Bot đang lọc liên tục qua các khung M5, M15, H1, H4 theo điều kiện khắt khe. Tín hiệu sẽ tự động đẩy lên ngay khi xuất hiện!</div>
+                        <div class="text-gray-500 text-[11px]">Bot đang lọc liên tục qua các khung M5, M15, H1, H4. Lệnh sẽ tự động xuất hiện kèm thời gian bắn lệnh chuẩn giờ Việt Nam!</div>
                     </td>
                 </tr>`;
                 return;
@@ -175,7 +175,9 @@
                     <td class="p-4 font-mono text-brand-long font-bold text-sm">${sig.tp}</td>
                     <td class="p-4 font-mono text-brand-short font-bold text-sm">${sig.sl}</td>
                     <td class="p-4 font-mono text-white font-bold bg-brand-dark/40">${sig.leverage}</td>
-                    <td class="p-4 text-gray-400 text-xs font-mono">${sig.time}</td>
+                    <td class="p-4 text-emerald-400 font-bold text-xs font-mono">
+                        <i class="fa-regular fa-clock mr-1"></i>${sig.time}
+                    </td>
                 </tr>`;
             });
             tbody.innerHTML = html;
