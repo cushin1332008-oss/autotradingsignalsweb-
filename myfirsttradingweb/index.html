@@ -1,203 +1,341 @@
 <!DOCTYPE html>
-<html lang="vi" class="dark">
+<html lang="vi">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cu Shin Pro Signals Bot - Institutional Trading Hub</title>
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Font Awesome Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        brand: {
-                            dark: '#0B0E11',
-                            card: '#181A20',
-                            border: '#2B313A',
-                            accent: '#FCD535',
-                            long: '#0ECB81',
-                            short: '#F6465D'
-                        }
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        body { background-color: #0B0E11; color: #EAECF0; font-family: 'Inter', sans-serif; }
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #181A20; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #2B313A; border-radius: 3px; }
-        @keyframes pulse-fast {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
-        }
-        .live-pulse { animation: pulse-fast 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Crypto Signal Screener Realtime</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+  </style>
 </head>
-<body class="min-h-screen flex flex-col custom-scrollbar">
+<body class="bg-slate-950 text-slate-100 min-h-screen p-4 sm:p-6 md:p-8">
 
-    <!-- Header -->
-    <header class="border-b border-brand-border bg-brand-card px-6 py-4 flex items-center justify-between sticky top-0 z-50 shadow-md">
-        <div class="flex items-center space-x-3">
-            <div class="w-10 h-10 bg-brand-accent rounded-xl flex items-center justify-center text-black font-extrabold text-2xl shadow-lg shadow-yellow-500/20">
-                <i class="fa-solid fa-bolt"></i>
-            </div>
-            <div>
-                <h1 class="text-lg font-black tracking-wide text-white leading-tight flex items-center gap-2">
-                    CU SHIN PRO SIGNALS BOT <span class="text-brand-accent text-xs px-2 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/20 font-bold">TOP 100 QUANT</span>
-                </h1>
-                <p class="text-xs text-gray-400">Hệ Thống Tín Hiệu Định Quantitative & DCA Tối Ưu Lợi Nhuận</p>
-            </div>
-        </div>
-        <div class="flex items-center space-x-4">
-            <button onclick="fetchSignals()" class="text-xs bg-brand-border hover:bg-brand-accent hover:text-black text-white px-3 py-1.5 rounded-lg transition font-bold flex items-center gap-1.5">
-                <i class="fa-solid fa-rotate"></i> Làm mới
-            </button>
-            <div class="flex items-center space-x-2 text-xs bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg">
-                <span class="relative flex h-2.5 w-2.5">
-                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                </span>
-                <span class="text-emerald-400 font-bold">Live Feed Active</span>
-            </div>
-        </div>
+  <div class="max-w-6xl mx-auto">
+    <!-- Header Dashboard -->
+    <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-6 mb-6 border-b border-slate-800 gap-4">
+      <div>
+        <h1 class="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+          🔥 CuShin Signal Screener
+        </h1>
+        <p class="text-xs sm:text-sm text-slate-400 mt-1">Top 100 Coin Binance · Phân tích Đa Khung · Cắt lỗ thông minh với ATR</p>
+      </div>
+
+      <div id="status-container" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-xs sm:text-sm">
+        <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+        <span id="status-text" class="text-slate-400 font-medium">Đang kết nối...</span>
+      </div>
     </header>
 
-    <!-- Main Content -->
-    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
+    <!-- Win rate thật, đo lường từ dữ liệu sống -->
+    <div id="stats-banner" class="mb-6 bg-slate-900/60 border border-slate-800 rounded-xl px-4 py-3 hidden">
+      <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
+        <span class="text-slate-400 font-semibold">📊 Win rate thật (đo sống):</span>
+        <span id="stat-overall" class="mono text-slate-200"></span>
+        <span id="stat-scalp" class="mono text-cyan-300"></span>
+        <span id="stat-swing" class="mono text-amber-300"></span>
+        <span id="stat-position" class="mono text-violet-300"></span>
+        <span id="stat-updated" class="text-slate-600 ml-auto"></span>
+      </div>
+    </div>
 
-        <!-- Thống kê nhanh -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex items-center space-x-4">
-                <div class="w-12 h-12 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 text-xl font-bold">
-                    <i class="fa-solid fa-shield-halved"></i>
-                </div>
-                <div>
-                    <h3 class="text-xs text-gray-400 font-semibold uppercase">Chiến Lược Phân Bổ Vol</h3>
-                    <p class="text-sm font-bold text-white mt-0.5">Entry 1 (40%) | DCA 2 (60%)</p>
-                </div>
-            </div>
+    <!-- Tabs lọc theo khung giao dịch -->
+    <div class="flex flex-wrap gap-2 mb-6" id="profile-tabs">
+      <button data-profile="ALL" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold border transition-colors bg-cyan-500/10 text-cyan-400 border-cyan-500/30">
+        Tất cả
+      </button>
+      <button data-profile="SCALP" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold border transition-colors bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700">
+        ⚡ Lướt sóng (M15)
+      </button>
+      <button data-profile="SWING" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold border transition-colors bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700">
+        📈 Trung hạn (H1)
+      </button>
+      <button data-profile="POSITION" class="tab-btn px-4 py-2 rounded-lg text-sm font-semibold border transition-colors bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700">
+        🐢 Dài hạn (H4)
+      </button>
+    </div>
+    <p class="text-[11px] sm:text-xs text-slate-500 mb-4">
+      💡 Ít thời gian theo dõi? Chọn <span class="text-slate-300 font-medium">"Dài hạn (H4)"</span> — tín hiệu ra ít hơn, entry rộng hơn, không cần canh liên tục.
+    </p>
 
-            <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex items-center space-x-4">
-                <div class="w-12 h-12 rounded-lg bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center text-brand-accent text-xl font-bold">
-                    <i class="fa-solid fa-gauge-high"></i>
-                </div>
-                <div>
-                    <h3 class="text-xs text-gray-400 font-semibold uppercase">Đòn Bẩy Khuyến Nghị</h3>
-                    <p class="text-sm font-bold text-white mt-0.5">Linh Hoạt 20x - 200x</p>
-                </div>
-            </div>
+    <!-- Disclaimer -->
+    <div class="mb-6 text-[11px] sm:text-xs text-slate-500 bg-slate-900/40 border border-slate-800/60 rounded-lg px-4 py-2.5">
+      ⚠️ Tín hiệu được thuật toán tính toán tự động với mức dừng lỗ co giãn theo <b>ATR (Độ biến động)</b> và đòn bẩy đề xuất dựa trên nguyên tắc giới hạn margin an toàn. Giao dịch đòn bẩy có rủi ro mất vốn nhanh hơn giao dịch spot — đây không phải lời khuyên đầu tư, tự chịu trách nhiệm với quyết định giao dịch của bạn.
+    </div>
 
-            <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex items-center space-x-4">
-                <div class="w-12 h-12 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 text-xl font-bold">
-                    <i class="fa-solid fa-clock"></i>
-                </div>
-                <div>
-                    <h3 class="text-xs text-gray-400 font-semibold uppercase">Múi Giờ Hệ Thống</h3>
-                    <p class="text-sm font-bold text-emerald-400 mt-0.5">Giờ Việt Nam (GMT+7)</p>
-                </div>
-            </div>
+    <!-- Signal Cards Grid -->
+    <main>
+      <div id="signals-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div class="col-span-full text-center py-16 bg-slate-900/50 rounded-2xl border border-slate-800/80">
+          <div class="inline-block p-4 rounded-full bg-slate-800/80 mb-3 text-2xl">📡</div>
+          <p class="text-slate-400 font-medium">Đang kết nối với Database...</p>
         </div>
-
-        <!-- Bảng Tín Hiệu Live -->
-        <div class="bg-brand-card border border-brand-border rounded-xl overflow-hidden shadow-xl">
-            <div class="p-4 sm:p-5 border-b border-brand-border flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div class="flex items-center gap-2">
-                    <h2 class="text-base font-bold text-white flex items-center gap-2">
-                        <i class="fa-solid fa-satellite-dish text-brand-accent live-pulse"></i> Trung Tâm Tín Hiệu Giao Dịch Live
-                    </h2>
-                </div>
-                <div class="text-xs text-gray-400 bg-brand-dark px-3 py-1.5 rounded-lg border border-brand-border">
-                    Tự động cập nhật mỗi <span class="text-brand-accent font-bold">5 giây</span>
-                </div>
-            </div>
-
-            <div class="overflow-x-auto">
-                <table class="w-full text-left text-xs text-gray-300">
-                    <thead class="bg-brand-dark text-gray-400 uppercase font-bold text-[11px] border-b border-brand-border tracking-wider">
-                        <tr>
-                            <th class="p-4">Cặp Coin / Khung</th>
-                            <th class="p-4">Vị Thế</th>
-                            <th class="p-4">Entry 1 (40% Vol) / DCA 2 (60% Vol)</th>
-                            <th class="p-4">Take Profit (TP)</th>
-                            <th class="p-4">Stop Loss (SL)</th>
-                            <th class="p-4">Đòn Bẩy</th>
-                            <th class="p-4">Thời Gian (GMT+7)</th>
-                        </tr>
-                    </thead>
-                    <tbody id="signal-table-body" class="divide-y divide-brand-border">
-                        <tr><td colspan="7" class="p-12 text-center text-gray-500 font-medium">Đang kết nối tới server tín hiệu...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
+      </div>
     </main>
+  </div>
 
-    <script>
-        let rawSignalsData = [];
+  <script>
+    const firebaseConfig = {
+      databaseURL: "https://webtrade-85ca8-default-rtdb.asia-southeast1.firebasedatabase.app"
+    };
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
 
-        function renderSignalTable() {
-            const tbody = document.getElementById('signal-table-body');
-            if (!rawSignalsData || rawSignalsData.length === 0) {
-                tbody.innerHTML = `
-                <tr>
-                    <td colspan="7" class="p-12 text-center">
-                        <div class="text-gray-400 font-semibold mb-1">📭 Hiện chưa có tín hiệu mới từ Top 100 Coin</div>
-                        <div class="text-gray-500 text-[11px]">Bot đang lọc liên tục qua các khung M5, M15, H1, H4. Lệnh sẽ tự động xuất hiện kèm thời gian bắn lệnh chuẩn giờ Việt Nam!</div>
-                    </td>
-                </tr>`;
-                return;
-            }
+    const dbRef = firebase.database().ref('signals');
+    const statsRef = firebase.database().ref('performance_stats');
+    const signalsGrid = document.getElementById('signals-grid');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const tabButtons = document.querySelectorAll('.tab-btn');
 
-            let html = '';
-            rawSignalsData.forEach(sig => {
-                const isLong = sig.position === 'LONG';
-                const posClass = isLong ? 'bg-brand-long/10 text-brand-long border border-brand-long/20' : 'bg-brand-short/10 text-brand-short border border-brand-short/20';
-                
-                html += `
-                <tr class="hover:bg-gray-800/40 transition">
-                    <td class="p-4 font-extrabold text-white text-sm">
-                        #${sig.symbol} 
-                        <span class="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded font-bold ml-1">${sig.tf}</span>
-                    </td>
-                    <td class="p-4">
-                        <span class="${posClass} px-3 py-1 rounded-md font-extrabold text-xs tracking-wide">${sig.position}</span>
-                    </td>
-                    <td class="p-4 font-mono">
-                        <div class="text-white font-bold text-sm">E1: ${sig.entry1}</div>
-                        <div class="text-brand-accent text-xs mt-0.5">DCA 2: ${sig.entry2}</div>
-                    </td>
-                    <td class="p-4 font-mono text-brand-long font-bold text-sm">${sig.tp}</td>
-                    <td class="p-4 font-mono text-brand-short font-bold text-sm">${sig.sl}</td>
-                    <td class="p-4 font-mono text-white font-bold bg-brand-dark/40">${sig.leverage}</td>
-                    <td class="p-4 text-emerald-400 font-bold text-xs font-mono">
-                        <i class="fa-regular fa-clock mr-1"></i>${sig.time}
-                    </td>
-                </tr>`;
-            });
-            tbody.innerHTML = html;
-        }
+    let currentData = null;
+    let activeProfile = "ALL";
 
-        async function fetchSignals() {
-            try {
-                const response = await fetch('/api/signals');
-                const result = await response.json();
-                if (result.status === 'success') {
-                    rawSignalsData = result.data;
-                    renderSignalTable();
-                }
-            } catch (err) {}
-        }
+    const PROFILE_META = {
+      SCALP:    { icon: "⚡", short: "M15", color: "text-cyan-400" },
+      SWING:    { icon: "📈", short: "H1",  color: "text-amber-400" },
+      POSITION: { icon: "🐢", short: "H4",  color: "text-violet-400" },
+    };
 
-        window.addEventListener('DOMContentLoaded', () => {
-            fetchSignals();
-            setInterval(fetchSignals, 5000); 
+    function riskColorClasses(confidenceLevel) {
+      switch (confidenceLevel) {
+        case "Tin cậy cao":       return { text: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" };
+        case "Tin cậy trung bình": return { text: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/20" };
+        default:                   return { text: "text-rose-400",    bg: "bg-rose-500/10",    border: "border-rose-500/20" };
+      }
+    }
+
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        activeProfile = btn.dataset.profile;
+        tabButtons.forEach(b => {
+          b.classList.remove('bg-cyan-500/10', 'text-cyan-400', 'border-cyan-500/30');
+          b.classList.add('bg-slate-900', 'text-slate-400', 'border-slate-800');
         });
-    </script>
+        btn.classList.remove('bg-slate-900', 'text-slate-400', 'border-slate-800');
+        btn.classList.add('bg-cyan-500/10', 'text-cyan-400', 'border-cyan-500/30');
+        render(currentData);
+      });
+    });
+
+    dbRef.on('value', (snapshot) => {
+      statusDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]";
+      statusText.className = "text-emerald-400 font-medium";
+      statusText.innerText = "Trực tuyến (Realtime)";
+      currentData = snapshot.val();
+      render(currentData);
+    }, (error) => {
+      statusDot.className = "w-2.5 h-2.5 rounded-full bg-rose-500";
+      statusText.className = "text-rose-400 font-medium";
+      statusText.innerText = "Lỗi kết nối";
+      console.error("Firebase Error:", error);
+    });
+
+    statsRef.on('value', (snapshot) => {
+      const stats = snapshot.val();
+      const banner = document.getElementById('stats-banner');
+      if (!stats || !stats.overall) return;
+      banner.classList.remove('hidden');
+
+      const fmt = (bucket, label) => {
+        if (!bucket || bucket.total === 0) return `<span class="text-slate-600">${label}: chưa có dữ liệu</span>`;
+        const wr = bucket.win_rate !== null && bucket.win_rate !== undefined ? `${bucket.win_rate}%` : 'đang chờ kết quả';
+        return `${label}: <b>${wr}</b> <span class="text-slate-600">(${bucket.tp || 0}TP/${bucket.sl || 0}SL, ${bucket.open || 0} đang mở)</span>`;
+      };
+
+      document.getElementById('stat-overall').innerHTML = fmt(stats.overall, '📊 Tổng');
+      document.getElementById('stat-scalp').innerHTML = fmt(stats.by_profile?.SCALP, '⚡ M15');
+      document.getElementById('stat-swing').innerHTML = fmt(stats.by_profile?.SWING, '📈 H1');
+      document.getElementById('stat-position').innerHTML = fmt(stats.by_profile?.POSITION, '🐢 H4');
+      document.getElementById('stat-updated').innerText = `Cập nhật: ${stats.updated_at || ''}`;
+    });
+
+
+    function render(data) {
+      if (!data || Object.keys(data).length === 0) {
+        signalsGrid.innerHTML = `
+          <div class="col-span-full text-center py-16 bg-slate-900/40 rounded-2xl border border-slate-800/60">
+            <div class="inline-block p-4 rounded-full bg-slate-800/50 mb-3 text-2xl">😴</div>
+            <p class="text-slate-400 font-medium">Hiện tại chưa có Coin nào hội tụ đủ điều kiện kỹ thuật.</p>
+            <p class="text-slate-600 text-xs mt-1">Bot quét Top 100 coin, tự động cập nhật mỗi 5 phút...</p>
+          </div>`;
+        return;
+      }
+
+      let items = Object.values(data);
+      if (activeProfile !== "ALL") {
+        items = items.filter(item => item.profile === activeProfile);
+      }
+
+      if (items.length === 0) {
+        signalsGrid.innerHTML = `
+          <div class="col-span-full text-center py-16 bg-slate-900/40 rounded-2xl border border-slate-800/60">
+            <div class="inline-block p-4 rounded-full bg-slate-800/50 mb-3 text-2xl">🔍</div>
+            <p class="text-slate-400 font-medium">Chưa có tín hiệu nào ở khung giao dịch này.</p>
+            <p class="text-slate-600 text-xs mt-1">Thử chọn "Tất cả" hoặc đợi lần quét kế tiếp.</p>
+          </div>`;
+        return;
+      }
+
+      items.sort((a, b) => (b.confluence_pct || 0) - (a.confluence_pct || 0));
+
+      signalsGrid.innerHTML = '';
+      items.forEach(item => {
+        const isBuy = item.signal.includes("BUY");
+        const cardBorder = isBuy ? 'border-emerald-500/30 hover:border-emerald-500/60' : 'border-rose-500/30 hover:border-rose-500/60';
+        const badgeBg = isBuy ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+        const risk = riskColorClasses(item.confidence_level);
+        const meta = PROFILE_META[item.profile] || { icon: "•", short: item.entry_tf, color: "text-slate-400" };
+        const leverageCapNote = item.leverage_capped
+          ? `<span class="text-amber-400" title="Đòn bẩy cần thiết vượt trần an toàn của khung này — risk thực tế nếu dính SL có thể CAO HƠN mức hiển thị, cân nhắc kỹ">⚠️ vượt trần khung này</span>`
+          : '';
+
+        const cardHTML = `
+          <div class="bg-slate-900 rounded-2xl p-5 border ${cardBorder} transition-all duration-300 shadow-xl flex flex-col justify-between">
+            <div>
+              <div class="flex justify-between items-start mb-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-xl font-bold text-slate-100 tracking-wide">${item.symbol}</span>
+                </div>
+                <span class="${badgeBg} px-3 py-1 rounded-full text-xs font-bold border tracking-wide">
+                  ${item.signal}
+                </span>
+              </div>
+              <div class="mb-4">
+                <span class="inline-flex items-center gap-1 text-[11px] font-semibold ${meta.color} bg-slate-950/60 px-2 py-1 rounded-md border border-slate-800">
+                  ${meta.icon} ${item.trade_timeframe} · Entry ${item.entry_tf}
+                </span>
+              </div>
+
+              <!-- Confluence Bar -->
+              <div class="mb-4">
+                <div class="flex justify-between items-center text-[11px] text-slate-500 mb-1">
+                  <span>Độ hội tụ đa khung</span>
+                  <span class="mono font-semibold text-slate-300">${item.confluence_pct}%</span>
+                </div>
+                <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div class="h-full ${isBuy ? 'bg-emerald-500' : 'bg-rose-500'}" style="width:${item.confluence_pct}%"></div>
+                </div>
+              </div>
+
+              <!-- Key Trading Prices -->
+              <div class="bg-slate-950/60 rounded-xl p-3.5 space-y-2.5 mb-3 border border-slate-800/50">
+                <div class="flex justify-between items-center text-sm">
+                  <span class="text-slate-400">Entry Price:</span>
+                  <span class="mono font-semibold text-slate-200">${item.entry}</span>
+                </div>
+                <div class="flex justify-between items-center text-sm">
+                  <span class="text-slate-400">Stop Loss (SL):</span>
+                  <span class="mono font-semibold text-rose-400">${item.stop_loss}</span>
+                </div>
+                <div class="flex justify-between items-center text-sm">
+                  <span class="text-slate-400">Take Profit (TP):</span>
+                  <span class="mono font-semibold text-emerald-400">${item.take_profit}</span>
+                </div>
+                <div class="flex justify-between items-center text-sm pt-2 border-t border-slate-800/60">
+                  <span class="text-slate-400">Hỗ trợ / Kháng cự:</span>
+                  <span class="mono text-slate-300">${item.support} / ${item.resistance}</span>
+                </div>
+                <!-- New ATR Line -->
+                <div class="flex justify-between items-center text-sm">
+                  <span class="text-slate-400">ATR (Độ biến động):</span>
+                  <span class="mono text-cyan-400/80">${item.atr ? item.atr : 'N/A'}</span>
+                </div>
+                <div class="flex justify-between items-center text-sm">
+                  <span class="text-slate-400">Volume 24h:</span>
+                  <span class="mono text-slate-300">${item.volume_24h_fmt || 'N/A'}</span>
+                </div>
+              </div>
+
+              ${item.dca_enabled ? `
+              <!-- DCA Ladder -->
+              <div class="mb-4 rounded-xl border border-indigo-500/25 bg-indigo-500/[0.06] p-3.5">
+                <div class="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-300 mb-2.5">
+                  <span>📥</span><span>KẾ HOẠCH DCA (2 LỆNH)</span>
+                </div>
+                <div class="space-y-2">
+                  <div class="flex items-center gap-2.5">
+                    <span class="w-14 shrink-0 text-[10px] font-bold text-slate-500 mono">ENTRY 1</span>
+                    <div class="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                      <div class="h-full bg-indigo-400" style="width:${item.entry_volume_pct}%"></div>
+                    </div>
+                    <span class="mono text-[11px] text-slate-300 w-12 text-right">${item.entry_volume_pct}%</span>
+                    <span class="mono text-xs text-slate-200 font-semibold w-20 text-right">${item.entry}</span>
+                  </div>
+                  <div class="flex items-center gap-2.5">
+                    <span class="w-14 shrink-0 text-[10px] font-bold text-slate-500 mono">DCA</span>
+                    <div class="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                      <div class="h-full bg-indigo-500/60" style="width:${item.dca_volume_pct}%"></div>
+                    </div>
+                    <span class="mono text-[11px] text-slate-300 w-12 text-right">${item.dca_volume_pct}%</span>
+                    <span class="mono text-xs text-slate-200 font-semibold w-20 text-right">${item.dca_entry}</span>
+                  </div>
+                </div>
+                <div class="flex justify-between items-center text-[11px] mt-3 pt-2.5 border-t border-indigo-500/15">
+                  <span class="text-slate-400">Giá vốn TB nếu khớp cả 2:</span>
+                  <span class="mono text-indigo-300 font-bold">${item.avg_entry_if_filled}</span>
+                </div>
+                <div class="flex justify-between items-center text-[11px] mt-1">
+                  <span class="text-slate-400">R:R sau khi DCA khớp:</span>
+                  <span class="mono text-indigo-300 font-bold">1 : ${item.rr_after_dca ?? '—'}</span>
+                </div>
+                <div class="text-[10px] text-slate-500 mt-2 leading-relaxed">SL/TP giữ nguyên mức cấu trúc — chỉ giá vốn trung bình đổi nếu lệnh DCA khớp.</div>
+              </div>` : ''}
+
+              <!-- Position Sizing / Risk Box -->
+              <div class="${risk.bg} ${risk.border} border rounded-xl p-3.5 mb-4">
+                <div class="flex justify-between items-center text-xs mb-1.5">
+                  <span class="text-slate-400">Độ tin cậy tín hiệu:</span>
+                  <span class="${risk.text} font-bold">${item.confidence_level}</span>
+                </div>
+                <div class="flex justify-between items-center text-xs mb-1.5">
+                  <span class="text-slate-400">Nếu dính SL, mất:</span>
+                  <span class="mono text-rose-400 font-semibold">${item.risk_percent}% tài khoản</span>
+                </div>
+                <div class="flex justify-between items-center text-xs mb-1.5">
+                  <span class="text-slate-400">Nếu chạm TP, lời:</span>
+                  <span class="mono text-emerald-400 font-semibold">~${(item.risk_percent * (Math.abs(item.take_profit - item.entry) / Math.abs(item.entry - item.stop_loss))).toFixed(2)}% tài khoản</span>
+                </div>
+                <div class="flex justify-between items-center text-xs mb-1.5">
+                  <span class="text-slate-400">Margin đề xuất:</span>
+                  <span class="mono ${risk.text} font-semibold">${item.margin_pct}% tài khoản</span>
+                </div>
+                <div class="flex justify-between items-center text-xs">
+                  <span class="text-slate-400">Đòn bẩy đề xuất:</span>
+                  <span class="mono ${risk.text} font-bold">${item.leverage}x ${leverageCapNote}</span>
+                </div>
+                ${item.margin_usdt !== null && item.margin_usdt !== undefined ? `
+                <div class="flex justify-between items-center text-xs mt-1.5 pt-1.5 border-t border-slate-700/40">
+                  <span class="text-slate-400">Ký quỹ / Khối lượng lệnh:</span>
+                  <span class="mono ${risk.text} font-semibold">${item.margin_usdt} / ${item.notional_usdt} USDT</span>
+                </div>` : ''}
+                ${item.min_notional_adjusted ? `
+                <div class="text-[10px] text-amber-400 mt-1">⚡ Đã nâng đòn bẩy để đạt khối lượng lệnh tối thiểu sàn yêu cầu</div>` : ''}
+              </div>
+
+              <div class="flex items-center justify-between text-xs text-slate-400 px-1 mb-4">
+                <span>RSI (${item.entry_tf}): <strong class="${item.rsi_entry_tf < 40 ? 'text-emerald-400' : (item.rsi_entry_tf > 60 ? 'text-rose-400' : 'text-slate-300')}">${item.rsi_entry_tf}</strong></span>
+                <span>R:R Ratio: <strong class="text-amber-400">1 : ${item.rr_ratio}</strong></span>
+              </div>
+            </div>
+
+            <div class="pt-3 border-t border-slate-800/80 text-xs">
+              <p class="text-slate-300 font-normal leading-relaxed">
+                💡 <span class="text-slate-400">Lý do:</span> ${item.reason}
+              </p>
+              <div class="mt-3 flex justify-between items-center text-[11px] text-slate-500">
+                <span>Cập nhật (giờ VN):</span>
+                <span class="mono">${item.time_str}</span>
+              </div>
+            </div>
+          </div>
+        `;
+        signalsGrid.innerHTML += cardHTML;
+      });
+    }
+  </script>
 </body>
 </html>
