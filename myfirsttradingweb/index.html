@@ -96,7 +96,7 @@
                 </div>
                 <div>
                     <h3 class="text-xs text-gray-400 font-semibold uppercase">Tần Suất Quét Bot</h3>
-                    <p class="text-sm font-bold text-white mt-0.5">Real-time (Đa Khung M5, M15, H1)</p>
+                    <p class="text-sm font-bold text-white mt-0.5">Real-time (M5, M15, H1, H4)</p>
                 </div>
             </div>
         </div>
@@ -141,7 +141,7 @@
         function renderSignalTable() {
             const tbody = document.getElementById('signal-table-body');
             if (rawSignalsData.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="p-12 text-center text-gray-500 font-medium">Hệ thống đang quét các điều kiện khắt khe (EMA200 + RSI + Volume). Vui lòng đợi tín hiệu chất lượng xuất hiện...</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="p-12 text-center text-gray-500 font-medium">Hệ thống đang quét các điều kiện khắt khe (EMA200 + RSI + Volume đa khung M5, M15, H1, H4). Vui lòng đợi tín hiệu chất lượng xuất hiện...</td></tr>`;
                 return;
             }
 
