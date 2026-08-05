@@ -3,13 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Alpha Signal Pro - Trading Dashboard</title>
+    <title>Cu Shin Pro Signals Bot - Institutional Trading Hub</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- TradingView Widget -->
-    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -31,23 +29,29 @@
     </script>
     <style>
         body { background-color: #0B0E11; color: #EAECF0; font-family: 'Inter', sans-serif; }
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #181A20; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #2B313A; border-radius: 3px; }
+        @keyframes pulse-fast {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .live-pulse { animation: pulse-fast 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col custom-scrollbar">
 
-    <header class="border-b border-brand-border bg-brand-card px-6 py-4 flex items-center justify-between sticky top-0 z-50">
+    <!-- Header -->
+    <header class="border-b border-brand-border bg-brand-card px-6 py-4 flex items-center justify-between sticky top-0 z-50 shadow-md">
         <div class="flex items-center space-x-3">
-            <div class="w-9 h-9 bg-brand-accent rounded-lg flex items-center justify-center text-black font-bold text-xl shadow-lg shadow-yellow-500/20">
+            <div class="w-10 h-10 bg-brand-accent rounded-xl flex items-center justify-center text-black font-extrabold text-2xl shadow-lg shadow-yellow-500/20">
                 <i class="fa-solid fa-bolt"></i>
             </div>
             <div>
-                <h1 class="text-lg font-bold tracking-wide text-white leading-tight flex items-center gap-2">
-                    ALPHA SIGNAL <span class="text-brand-accent text-xs px-2 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/20">QUANT PRO</span>
+                <h1 class="text-lg font-black tracking-wide text-white leading-tight flex items-center gap-2">
+                    CU SHIN PRO SIGNALS BOT <span class="text-brand-accent text-xs px-2 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/20 font-bold">QUANT INSTITUTIONAL</span>
                 </h1>
-                <p class="text-xs text-gray-400">Live Screener & Multi-Filter Dashboard</p>
+                <p class="text-xs text-gray-400">Hệ Thống Tín Hiệu Định Quantitative & DCA Tối Ưu Lợi Nhuận</p>
             </div>
         </div>
         <div class="flex items-center space-x-4">
@@ -56,61 +60,75 @@
                     <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                     <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                 </span>
-                <span class="text-emerald-400 font-semibold">System Active</span>
+                <span class="text-emerald-400 font-bold">Live Feed Active</span>
             </div>
         </div>
     </header>
 
+    <!-- Main Content -->
     <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
 
-        <!-- Biểu đồ TradingView toàn chiều rộng (Full-width) kèm Quick Tabs đổi coin -->
-        <div class="bg-brand-card border border-brand-border rounded-xl p-4">
-            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-3 px-2 gap-3">
-                <div class="flex items-center gap-3">
-                    <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                        <i class="fa-solid fa-chart-candlestick text-brand-accent"></i> Biểu Đồ Kỹ Thuật Live
-                    </h2>
-                    <span id="active-symbol-tag" class="bg-brand-accent/10 border border-brand-accent/30 text-brand-accent text-xs px-2.5 py-0.5 rounded font-mono font-bold">BINANCE:BTCUSDT</span>
+        <!-- Thống kê nhanh / Hướng dẫn chiến lược -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex items-center space-x-4">
+                <div class="w-12 h-12 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 text-xl font-bold">
+                    <i class="fa-solid fa-shield-halved"></i>
                 </div>
-                
-                <!-- Thanh chọn nhanh các coin chính -->
-                <div class="flex items-center gap-1.5 overflow-x-auto max-w-full pb-1 sm:pb-0">
-                    <span class="text-[11px] text-gray-400 mr-1">Chọn nhanh:</span>
-                    <button onclick="switchChart('BTCUSDT')" class="px-2.5 py-1 text-xs font-bold rounded bg-brand-border hover:bg-brand-accent hover:text-black transition">BTC</button>
-                    <button onclick="switchChart('ETHUSDT')" class="px-2.5 py-1 text-xs font-bold rounded bg-brand-border hover:bg-brand-accent hover:text-black transition">ETH</button>
-                    <button onclick="switchChart('SOLUSDT')" class="px-2.5 py-1 text-xs font-bold rounded bg-brand-border hover:bg-brand-accent hover:text-black transition">SOL</button>
-                    <button onclick="switchChart('BNBUSDT')" class="px-2.5 py-1 text-xs font-bold rounded bg-brand-border hover:bg-brand-accent hover:text-black transition">BNB</button>
-                    <button onclick="switchChart('XRPUSDT')" class="px-2.5 py-1 text-xs font-bold rounded bg-brand-border hover:bg-brand-accent hover:text-black transition">XRP</button>
-                    <button onclick="switchChart('DOGEUSDT')" class="px-2.5 py-1 text-xs font-bold rounded bg-brand-border hover:bg-brand-accent hover:text-black transition">DOGE</button>
+                <div>
+                    <h3 class="text-xs text-gray-400 font-semibold uppercase">Chiến Lược Phân Bổ Vol</h3>
+                    <p class="text-sm font-bold text-white mt-0.5">Entry 1 (40%) | DCA 2 (60%)</p>
                 </div>
             </div>
-            
-            <div class="w-full h-[520px] rounded-lg overflow-hidden border border-brand-border" id="tradingview_chart"></div>
+
+            <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex items-center space-x-4">
+                <div class="w-12 h-12 rounded-lg bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center text-brand-accent text-xl font-bold">
+                    <i class="fa-solid fa-gauge-high"></i>
+                </div>
+                <div>
+                    <h3 class="text-xs text-gray-400 font-semibold uppercase">Đòn Bẩy Khuyến Nghị</h3>
+                    <p class="text-sm font-bold text-white mt-0.5">Linh Hoạt 50x - 200x (Tối đa 500x)</p>
+                </div>
+            </div>
+
+            <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex items-center space-x-4">
+                <div class="w-12 h-12 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 text-xl font-bold">
+                    <i class="fa-solid fa-bolt-lightning"></i>
+                </div>
+                <div>
+                    <h3 class="text-xs text-gray-400 font-semibold uppercase">Tần Suất Quét Bot</h3>
+                    <p class="text-sm font-bold text-white mt-0.5">Real-time (Đa Khung M5, M15, H1)</p>
+                </div>
+            </div>
         </div>
 
-        <!-- Bảng Tín Hiệu -->
-        <div class="bg-brand-card border border-brand-border rounded-xl overflow-hidden">
-            <div class="p-4 border-b border-brand-border flex flex-col sm:flex-row items-center justify-between gap-4">
-                <h2 class="text-base font-bold text-white flex items-center gap-2">
-                    <i class="fa-solid fa-list text-brand-accent"></i> Danh Sách Tín Hiệu Auto Screener
-                </h2>
-                <span class="text-xs text-gray-400">Tự động đồng bộ mỗi 10 giây</span>
+        <!-- Bảng Tín Hiệu Chuyên Sâu (Full View) -->
+        <div class="bg-brand-card border border-brand-border rounded-xl overflow-hidden shadow-xl">
+            <div class="p-4 sm:p-5 border-b border-brand-border flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div class="flex items-center gap-2">
+                    <h2 class="text-base font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-satellite-dish text-brand-accent live-pulse"></i> Trung Tâm Tín Hiệu Giao Dịch Live
+                    </h2>
+                </div>
+                <div class="text-xs text-gray-400 bg-brand-dark px-3 py-1.5 rounded-lg border border-brand-border">
+                    Tự động cập nhật mỗi <span class="text-brand-accent font-bold">5 giây</span>
+                </div>
             </div>
+
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-xs text-gray-300">
-                    <thead class="bg-brand-dark text-gray-400 uppercase font-semibold text-[11px] border-b border-brand-border">
+                    <thead class="bg-brand-dark text-gray-400 uppercase font-bold text-[11px] border-b border-brand-border tracking-wider">
                         <tr>
-                            <th class="p-4">Coin / Khung</th>
+                            <th class="p-4">Cặp Coin / Khung</th>
                             <th class="p-4">Vị Thế</th>
-                            <th class="p-4">Entry 1 / DCA 2 (60%)</th>
-                            <th class="p-4">Take Profit</th>
-                            <th class="p-4">Stop Loss</th>
+                            <th class="p-4">Entry 1 (40% Vol) / DCA 2 (60% Vol)</th>
+                            <th class="p-4">Take Profit (TP)</th>
+                            <th class="p-4">Stop Loss (SL)</th>
                             <th class="p-4">Đòn Bẩy</th>
-                            <th class="p-4">Giờ</th>
+                            <th class="p-4">Thời Gian</th>
                         </tr>
                     </thead>
                     <tbody id="signal-table-body" class="divide-y divide-brand-border">
-                        <tr><td colspan="7" class="p-8 text-center text-gray-500">Đang quét tìm kiếm tín hiệu thị trường...</td></tr>
+                        <tr><td colspan="7" class="p-12 text-center text-gray-500 font-medium">Đang tải cơ sở dữ liệu tín hiệu thông minh...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -118,56 +136,37 @@
     </main>
 
     <script>
-        let tvWidget = null;
         let rawSignalsData = [];
-
-        function loadTradingViewWidget(symbol = "BINANCE:BTCUSDT", timeframe = "15") {
-            // Chuẩn hóa tên symbol để luôn có dạng BINANCE:XXXX
-            let formattedSymbol = symbol.startsWith('BINANCE:') ? symbol : `BINANCE:${symbol}`;
-            document.getElementById('active-symbol-tag').innerText = formattedSymbol;
-            
-            tvWidget = new TradingView.widget({
-                "autosize": true,
-                "symbol": formattedSymbol,
-                "interval": timeframe,
-                "theme": "dark",
-                "style": "1",
-                "locale": "vi",
-                "toolbar_bg": "#181A20",
-                "enable_publishing": false,
-                "container_id": "tradingview_chart",
-                "studies": ["RSI@tv-basicstudies", "MASimple@tv-basicstudies"]
-            });
-        }
-
-        function switchChart(symbol) {
-            loadTradingViewWidget(symbol, "15");
-        }
 
         function renderSignalTable() {
             const tbody = document.getElementById('signal-table-body');
             if (rawSignalsData.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-gray-500">Chưa có tín hiệu mới từ Screener (Bot đang lọc theo điều kiện khắt khe: EMA200 + RSI + Volume).</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="p-12 text-center text-gray-500 font-medium">Hệ thống đang quét các điều kiện khắt khe (EMA200 + RSI + Volume). Vui lòng đợi tín hiệu chất lượng xuất hiện...</td></tr>`;
                 return;
             }
 
             let html = '';
             rawSignalsData.forEach(sig => {
                 const isLong = sig.position === 'LONG';
-                const posClass = isLong ? 'bg-brand-long/10 text-brand-long' : 'bg-brand-short/10 text-brand-short';
+                const posClass = isLong ? 'bg-brand-long/10 text-brand-long border border-brand-long/20' : 'bg-brand-short/10 text-brand-short border border-brand-short/20';
                 
                 html += `
-                <tr onclick="switchChart('${sig.symbol}')" class="hover:bg-gray-800/50 cursor-pointer transition">
-                    <td class="p-4 font-bold text-white">#${sig.symbol} <span class="text-[10px] bg-blue-500/10 text-blue-400 px-1 rounded">${sig.tf}</span></td>
-                    <td class="p-4"><span class="${posClass} px-2 py-1 rounded font-bold text-[11px]">${sig.position}</span></td>
-                    <td class="p-4 font-mono">
-                        <div class="text-white">${sig.entry1}</div>
-                        <div class="text-gray-500 text-[11px]">DCA: ${sig.entry2}</div>
+                <tr class="hover:bg-gray-800/40 transition">
+                    <td class="p-4 font-extrabold text-white text-sm">
+                        #${sig.symbol} 
+                        <span class="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded font-bold ml-1">${sig.tf}</span>
                     </td>
-                    <td class="p-4 font-mono text-brand-long">${sig.tp}</td>
-                    <td class="p-4 font-mono text-brand-short">${sig.sl}</td>
-                    <td class="p-4 font-mono text-brand-accent">${sig.leverage}</td>
-                    <td class="p-4 text-gray-400 text-[11px]">${sig.time}</td>
+                    <td class="p-4">
+                        <span class="${posClass} px-3 py-1 rounded-md font-extrabold text-xs tracking-wide">${sig.position}</span>
+                    </td>
+                    <td class="p-4 font-mono">
+                        <div class="text-white font-bold text-sm">E1: ${sig.entry1}</div>
+                        <div class="text-brand-accent text-xs mt-0.5">DCA 2: ${sig.entry2}</div>
+                    </td>
+                    <td class="p-4 font-mono text-brand-long font-bold text-sm">${sig.tp}</td>
+                    <td class="p-4 font-mono text-brand-short font-bold text-sm">${sig.sl}</td>
+                    <td class="p-4 font-mono text-white font-bold bg-brand-dark/40">${sig.leverage}</td>
+                    <td class="p-4 text-gray-400 text-xs font-mono">${sig.time}</td>
                 </tr>`;
             });
             tbody.innerHTML = html;
@@ -185,9 +184,8 @@
         }
 
         window.addEventListener('DOMContentLoaded', () => {
-            loadTradingViewWidget("BINANCE:BTCUSDT", "15");
             fetchSignals();
-            setInterval(fetchSignals, 10000); 
+            setInterval(fetchSignals, 5000); 
         });
     </script>
 </body>
