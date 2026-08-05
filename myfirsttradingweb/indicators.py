@@ -1,6 +1,7 @@
 import pandas as pd
 
 def calculate_rsi(df, period=14):
+    """Tính toán chỉ báo RSI"""
     delta = df['close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
@@ -8,12 +9,15 @@ def calculate_rsi(df, period=14):
     return 100 - (100 / (1 + rs))
 
 def calculate_ema(df, period=200):
+    """Tính đường EMA xác định xu hướng chủ đạo"""
     return df['close'].ewm(span=period, adjust=False).mean()
 
 def calculate_volume_ma(df, period=20):
+    """Tính đường trung bình khối lượng giao dịch"""
     return df['volume'].rolling(window=period).mean()
 
 def apply_all_indicators(df):
+    """Áp dụng toàn bộ chỉ báo vào DataFrame nến"""
     if df is None or len(df) < 200:
         return None
     df['rsi'] = calculate_rsi(df, period=14)
