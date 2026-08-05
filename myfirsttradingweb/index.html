@@ -63,17 +63,28 @@
 
     <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
 
-        <!-- Biểu đồ TradingView toàn chiều rộng (Full-width) -->
+        <!-- Biểu đồ TradingView toàn chiều rộng (Full-width) kèm Quick Tabs đổi coin -->
         <div class="bg-brand-card border border-brand-border rounded-xl p-4">
-            <div class="flex items-center justify-between mb-3 px-2">
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-3 px-2 gap-3">
                 <div class="flex items-center gap-3">
                     <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
                         <i class="fa-solid fa-chart-candlestick text-brand-accent"></i> Biểu Đồ Kỹ Thuật Live
                     </h2>
                     <span id="active-symbol-tag" class="bg-brand-accent/10 border border-brand-accent/30 text-brand-accent text-xs px-2.5 py-0.5 rounded font-mono font-bold">BINANCE:BTCUSDT</span>
                 </div>
-                <span class="text-xs text-gray-400">💡 Bấm vào bất kỳ dòng tín hiệu nào bên dưới để chuyển biểu đồ lập tức</span>
+                
+                <!-- Thanh chọn nhanh các coin chính -->
+                <div class="flex items-center gap-1.5 overflow-x-auto max-w-full pb-1 sm:pb-0">
+                    <span class="text-[11px] text-gray-400 mr-1">Chọn nhanh:</span>
+                    <button onclick="switchChart('BTCUSDT')" class="px-2.5 py-1 text-xs font-bold rounded bg-brand-border hover:bg-brand-accent hover:text-black transition">BTC</button>
+                    <button onclick="switchChart('ETHUSDT')" class="px-2.5 py-1 text-xs font-bold rounded bg-brand-border hover:bg-brand-accent hover:text-black transition">ETH</button>
+                    <button onclick="switchChart('SOLUSDT')" class="px-2.5 py-1 text-xs font-bold rounded bg-brand-border hover:bg-brand-accent hover:text-black transition">SOL</button>
+                    <button onclick="switchChart('BNBUSDT')" class="px-2.5 py-1 text-xs font-bold rounded bg-brand-border hover:bg-brand-accent hover:text-black transition">BNB</button>
+                    <button onclick="switchChart('XRPUSDT')" class="px-2.5 py-1 text-xs font-bold rounded bg-brand-border hover:bg-brand-accent hover:text-black transition">XRP</button>
+                    <button onclick="switchChart('DOGEUSDT')" class="px-2.5 py-1 text-xs font-bold rounded bg-brand-border hover:bg-brand-accent hover:text-black transition">DOGE</button>
+                </div>
             </div>
+            
             <div class="w-full h-[520px] rounded-lg overflow-hidden border border-brand-border" id="tradingview_chart"></div>
         </div>
 
@@ -99,7 +110,7 @@
                         </tr>
                     </thead>
                     <tbody id="signal-table-body" class="divide-y divide-brand-border">
-                        <tr><td colspan="7" class="p-8 text-center text-gray-500">Đang tải dữ liệu...</td></tr>
+                        <tr><td colspan="7" class="p-8 text-center text-gray-500">Đang quét tìm kiếm tín hiệu thị trường...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -111,10 +122,13 @@
         let rawSignalsData = [];
 
         function loadTradingViewWidget(symbol = "BINANCE:BTCUSDT", timeframe = "15") {
-            document.getElementById('active-symbol-tag').innerText = symbol;
+            // Chuẩn hóa tên symbol để luôn có dạng BINANCE:XXXX
+            let formattedSymbol = symbol.startsWith('BINANCE:') ? symbol : `BINANCE:${symbol}`;
+            document.getElementById('active-symbol-tag').innerText = formattedSymbol;
+            
             tvWidget = new TradingView.widget({
                 "autosize": true,
-                "symbol": symbol,
+                "symbol": formattedSymbol,
                 "interval": timeframe,
                 "theme": "dark",
                 "style": "1",
@@ -127,13 +141,13 @@
         }
 
         function switchChart(symbol) {
-            loadTradingViewWidget(`BINANCE:${symbol}`, "15");
+            loadTradingViewWidget(symbol, "15");
         }
 
         function renderSignalTable() {
             const tbody = document.getElementById('signal-table-body');
             if (rawSignalsData.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-gray-500">Chưa có tín hiệu mới từ Screener.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-gray-500">Chưa có tín hiệu mới từ Screener (Bot đang lọc theo điều kiện khắt khe: EMA200 + RSI + Volume).</td></tr>`;
                 return;
             }
 
