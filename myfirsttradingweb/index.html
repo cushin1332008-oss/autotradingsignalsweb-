@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Crypto Signal Intelligence Dashboard</title>
+    <title>Alpha Signal Intelligence - Institutional Dashboard</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Chart.js CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- TradingView Widget Script -->
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -41,23 +41,25 @@
     <!-- Top Navigation Bar -->
     <header class="border-b border-brand-border bg-brand-card px-6 py-4 flex items-center justify-between sticky top-0 z-50">
         <div class="flex items-center space-x-3">
-            <div class="w-9 h-9 bg-brand-accent rounded-lg flex items-center justify-center text-black font-bold text-xl">
+            <div class="w-9 h-9 bg-brand-accent rounded-lg flex items-center justify-center text-black font-bold text-xl shadow-lg shadow-yellow-500/20">
                 <i class="fa-solid fa-bolt"></i>
             </div>
             <div>
-                <h1 class="text-lg font-bold tracking-wide text-white leading-tight">ALPHA SIGNAL <span class="text-brand-accent text-xs px-2 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/20 ml-2">PRO</span></h1>
-                <p class="text-xs text-gray-400">Binance Futures Screener & Risk Engine</p>
+                <h1 class="text-lg font-bold tracking-wide text-white leading-tight flex items-center gap-2">
+                    ALPHA SIGNAL <span class="text-brand-accent text-xs px-2 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/20">PRO INSTITUTIONAL</span>
+                </h1>
+                <p class="text-xs text-gray-400">Binance Futures Screener & Interactive TradingView Engine</p>
             </div>
         </div>
 
         <div class="flex items-center space-x-6">
             <!-- Server Status -->
-            <div class="flex items-center space-x-2 text-xs">
+            <div class="flex items-center space-x-2 text-xs bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg">
                 <span class="relative flex h-2.5 w-2.5">
                     <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                     <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                 </span>
-                <span class="text-emerald-400 font-medium">Auto-Screener Active</span>
+                <span class="text-emerald-400 font-semibold">Auto-Screener Active</span>
             </div>
 
             <!-- Telegram Link Button -->
@@ -75,9 +77,9 @@
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex items-center justify-between">
                 <div>
-                    <p class="text-xs text-gray-400 font-medium uppercase">Tín hiệu nhận được</p>
+                    <p class="text-xs text-gray-400 font-medium uppercase">Tín hiệu realtime</p>
                     <p id="total-signals-count" class="text-2xl font-bold text-white mt-1">0</p>
-                    <p class="text-xs text-emerald-400 mt-1"><i class="fa-solid fa-sync fa-spin"></i> Live Auto Update</p>
+                    <p class="text-xs text-emerald-400 mt-1"><i class="fa-solid fa-sync fa-spin"></i> Live Stream Active</p>
                 </div>
                 <div class="p-3 bg-gray-800/50 rounded-lg text-brand-accent text-xl">
                     <i class="fa-solid fa-satellite-dish"></i>
@@ -118,12 +120,27 @@
             </div>
         </div>
 
+        <!-- Interactive TradingView Chart Section -->
+        <div class="bg-brand-card border border-brand-border rounded-xl p-4">
+            <div class="flex items-center justify-between mb-3 px-2">
+                <div class="flex items-center gap-3">
+                    <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-chart-candlestick text-brand-accent"></i> Biểu Đồ Kỹ Thuật TradingView Live
+                    </h2>
+                    <span id="active-symbol-tag" class="bg-brand-accent/10 border border-brand-accent/30 text-brand-accent text-xs px-2.5 py-0.5 rounded font-mono font-bold">BINANCE:BTCUSDT</span>
+                </div>
+                <p class="text-xs text-gray-400 hidden sm:block"><i class="fa-solid fa-hand-pointer text-brand-accent"></i> Bấm vào cặp coin bên dưới để xem chart tương ứng</p>
+            </div>
+            <!-- TradingView Widget Container -->
+            <div class="w-full h-[480px] rounded-lg overflow-hidden border border-brand-border" id="tradingview_chart"></div>
+        </div>
+
         <!-- Table Section: Realtime Signals -->
         <div class="bg-brand-card border border-brand-border rounded-xl overflow-hidden">
             <div class="p-4 border-b border-brand-border flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div class="flex items-center gap-2">
-                    <h2 class="text-base font-bold text-white">Tín Hiệu Realtime</h2>
-                    <span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs px-2 py-0.5 rounded font-mono">LIVE</span>
+                    <h2 class="text-base font-bold text-white">Bảng Tín Hiệu Quét Đa Khung</h2>
+                    <span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs px-2 py-0.5 rounded font-mono">LIVE FEED</span>
                 </div>
             </div>
 
@@ -143,11 +160,10 @@
                         </tr>
                     </thead>
                     <tbody id="signal-table-body" class="divide-y divide-brand-border">
-                        <!-- Tín hiệu thật sẽ tự động nạp vào đây qua API -->
                         <tr>
                             <td colspan="8" class="p-8 text-center text-gray-500">
                                 <i class="fa-solid fa-spinner fa-spin text-lg mb-2 block"></i>
-                                Đang quét tín hiệu realtime từ hệ thống...
+                                Đang kết nối máy chủ quét tín hiệu...
                             </td>
                         </tr>
                     </tbody>
@@ -161,8 +177,46 @@
         <p>© 2026 Alpha Signal Engine. All Trading Signals originate from Automated Quantitative Analysis.</p>
     </footer>
 
-    <!-- Fetch Realtime Signals JS -->
+    <!-- Logic Script: Live TradingView Integration & Auto Data Fetching -->
     <script>
+        let tvWidget = null;
+
+        // Khởi tạo TradingView Widget
+        function loadTradingViewWidget(symbol = "BINANCE:BTCUSDT", timeframe = "15") {
+            document.getElementById('active-symbol-tag').innerText = symbol;
+            
+            tvWidget = new TradingView.widget({
+                "autosize": true,
+                "symbol": symbol,
+                "interval": timeframe,
+                "timezone": "Asia/Ho_Chi_Minh",
+                "theme": "dark",
+                "style": "1",
+                "locale": "vi",
+                "toolbar_bg": "#181A20",
+                "enable_publishing": false,
+                "allow_symbol_change": true,
+                "container_id": "tradingview_chart",
+                "hide_side_toolbar": false,
+                "studies": [
+                    "RSI@tv-basicstudies",
+                    "MASimple@tv-basicstudies"
+                ]
+            });
+        }
+
+        // Chuyển đổi chart khi nhấp vào dòng tín hiệu
+        function switchChart(symbol, tf) {
+            let interval = "15";
+            if (tf === "H1") interval = "60";
+            if (tf === "H4") interval = "240";
+            if (tf === "D1") interval = "D";
+
+            const tvSymbol = `BINANCE:${symbol.replace('#', '')}`;
+            loadTradingViewWidget(tvSymbol, interval);
+        }
+
+        // Tải danh sách tín hiệu từ API
         async function fetchSignals() {
             try {
                 const response = await fetch('/api/signals');
@@ -193,10 +247,10 @@
                         const tfBg = sig.tf === 'M15' ? 'text-blue-400 bg-blue-500/10' : (sig.tf === 'H1' ? 'text-purple-400 bg-purple-500/10' : 'text-emerald-400 bg-emerald-500/10');
                         
                         html += `
-                        <tr class="hover:bg-gray-800/30 transition">
+                        <tr onclick="switchChart('${sig.symbol}', '${sig.tf}')" class="hover:bg-gray-800/50 cursor-pointer transition group">
                             <td class="p-4">
                                 <div class="flex items-center space-x-2">
-                                    <span class="font-bold text-white text-sm">#${sig.symbol}</span>
+                                    <span class="font-bold text-white text-sm group-hover:text-brand-accent transition">#${sig.symbol}</span>
                                     <span class="${tfBg} border border-current px-1.5 py-0.5 rounded font-mono text-[10px]">${sig.tf}</span>
                                 </div>
                             </td>
@@ -222,9 +276,9 @@
                             <td class="p-4 text-gray-400 font-mono text-[11px]">
                                 ${sig.time}
                             </td>
-                            <td class="p-4 text-right">
-                                <a href="https://www.binance.com/en/futures/${sig.symbol}" target="_blank" class="bg-brand-dark hover:bg-gray-700 text-white border border-brand-border px-3 py-1.5 rounded-md text-xs transition">
-                                    Trade <i class="fa-solid fa-arrow-up-right-from-square text-[10px] ml-1"></i>
+                            <td class="p-4 text-right" onclick="event.stopPropagation();">
+                                <a href="https://www.binance.com/en/futures/${sig.symbol}" target="_blank" class="bg-brand-dark hover:bg-gray-700 text-white border border-brand-border px-3 py-1.5 rounded-md text-xs transition inline-flex items-center gap-1">
+                                    Trade <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
                                 </a>
                             </td>
                         </tr>`;
@@ -237,9 +291,12 @@
             }
         }
 
-        // Tự động tải lại danh sách tín hiệu mỗi 5 giây
-        fetchSignals();
-        setInterval(fetchSignals, 5000);
+        // Khởi chạy khi load trang
+        window.addEventListener('DOMContentLoaded', () => {
+            loadTradingViewWidget("BINANCE:BTCUSDT", "15");
+            fetchSignals();
+            setInterval(fetchSignals, 5000);
+        });
     </script>
 </body>
 </html>
