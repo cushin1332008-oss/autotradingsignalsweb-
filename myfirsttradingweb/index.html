@@ -1,146 +1,317 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="vi" class="dark">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CuShin VIP Signal Dashboard</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-  <style>
-    body { font-family: 'Inter', sans-serif; }
-    .mono { font-family: 'JetBrains Mono', monospace; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Signal Intelligence Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            dark: '#0B0E11',
+                            card: '#181A20',
+                            border: '#2B313A',
+                            accent: '#FCD535',
+                            long: '#0ECB81',
+                            short: '#F6465D'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #0B0E11; color: #EAECSF; font-family: 'Inter', sans-serif; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #181A20; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #2B313A; border-radius: 3px; }
+    </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen p-4 sm:p-6">
+<body class="min-h-screen flex flex-col custom-scrollbar">
 
-  <div class="max-w-7xl mx-auto">
-    <!-- Header -->
-    <header class="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-6 mb-6 border-b border-slate-800 gap-4">
-      <div>
-        <h1 class="text-2xl sm:text-3xl font-extrabold bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
-          ⚡ CuShin High-Winrate Signals
-        </h1>
-        <p class="text-xs sm:text-sm text-slate-400 mt-1">Lọc Altcoin theo Trend BTC · Risk 1–3% cố định · Đòn bẩy 20x–500x · Entry DCA 40/60</p>
-      </div>
-      <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-xs">
-        <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
-        <span id="status-text" class="text-slate-400 font-medium">Đang kết nối...</span>
-      </div>
+    <!-- Top Navigation Bar -->
+    <header class="border-b border-brand-border bg-brand-card px-6 py-4 flex items-center justify-between sticky top-0 z-50">
+        <div class="flex items-center space-x-3">
+            <div class="w-9 h-9 bg-brand-accent rounded-lg flex items-center justify-center text-black font-bold text-xl">
+                <i class="fa-solid fa-bolt"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold tracking-wide text-white leading-tight">ALPHA SIGNAL <span class="text-brand-accent text-xs px-2 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/20 ml-2">PRO</span></h1>
+                <p class="text-xs text-gray-400">Binance Futures Screener & Risk Engine</p>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-6">
+            <!-- Server Status -->
+            <div class="flex items-center space-x-2 text-xs">
+                <span class="relative flex h-2.5 w-2.5">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                </span>
+                <span class="text-emerald-400 font-medium">Auto-Screener Active</span>
+            </div>
+
+            <!-- Telegram Link Button -->
+            <a href="https://t.me" target="_blank" class="flex items-center space-x-2 bg-blue-600/20 border border-blue-500/30 text-blue-400 hover:bg-blue-600/30 px-3 py-1.5 rounded-lg text-xs font-semibold transition">
+                <i class="fa-brands fa-telegram text-sm"></i>
+                <span>Telegram Bot</span>
+            </a>
+        </div>
     </header>
 
-    <!-- Signal Grid -->
-    <main>
-      <div id="signals-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div class="col-span-full text-center py-16 bg-slate-900/40 rounded-2xl border border-slate-800">
-          <p class="text-slate-400">Đang đồng bộ dữ liệu Realtime...</p>
-        </div>
-      </div>
-    </main>
-  </div>
+    <!-- Main Content Area -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
 
-  <script>
-    const firebaseConfig = {
-      databaseURL: "https://webtrade-85ca8-default-rtdb.asia-southeast1.firebasedatabase.app"
-    };
-    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-
-    const dbRef = firebase.database().ref('signals');
-    const signalsGrid = document.getElementById('signals-grid');
-
-    dbRef.on('value', (snapshot) => {
-      document.getElementById('status-dot').className = "w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]";
-      document.getElementById('status-text').className = "text-emerald-400 font-medium";
-      document.getElementById('status-text').innerText = "Trực tuyến (Realtime)";
-      render(snapshot.val());
-    });
-
-    function render(data) {
-      if (!data || Object.keys(data).length === 0) {
-        signalsGrid.innerHTML = `
-          <div class="col-span-full text-center py-16 bg-slate-900/40 rounded-2xl border border-slate-800">
-            <p class="text-slate-400 font-medium">Chưa có tín hiệu nào đáp ứng đủ bộ lọc An toàn & Winrate cao.</p>
-            <p class="text-slate-600 text-xs mt-1">Hệ thống quét lại sau mỗi 5 phút...</p>
-          </div>`;
-        return;
-      }
-
-      signalsGrid.innerHTML = '';
-      Object.values(data).forEach(item => {
-        const isBuy = item.signal.includes("BUY");
-        const cardBorder = isBuy ? 'border-emerald-500/30 hover:border-emerald-500/60' : 'border-rose-500/30 hover:border-rose-500/60';
-        const badgeBg = isBuy ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20';
-
-        const cardHTML = `
-          <div class="bg-slate-900 rounded-2xl p-5 border ${cardBorder} transition-all duration-300 shadow-xl flex flex-col justify-between">
-            <div>
-              <div class="flex justify-between items-start mb-3">
+        <!-- Top Metrics Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex items-center justify-between">
                 <div>
-                  <span class="text-xl font-bold text-slate-100">${item.symbol}</span>
-                  <span class="text-xs text-slate-400 block">${item.trade_timeframe}</span>
+                    <p class="text-xs text-gray-400 font-medium uppercase">Tín hiệu 24h</p>
+                    <p class="text-2xl font-bold text-white mt-1">24</p>
+                    <p class="text-xs text-emerald-400 mt-1"><i class="fa-solid fa-arrow-up"></i> +12% so với hôm qua</p>
                 </div>
-                <span class="${badgeBg} px-3 py-1 rounded-full text-xs font-bold border">
-                  ${item.signal}
-                </span>
-              </div>
-
-              <div class="bg-slate-950/80 rounded-xl p-3.5 space-y-2 mb-4 border border-slate-800">
-                <div class="text-[11px] font-semibold text-cyan-400 mb-1">⚖️ Chia Vol: ${item.vol_split}</div>
-                <div class="flex justify-between text-sm">
-                  <span class="text-slate-400">Entry 1:</span>
-                  <span class="mono font-semibold text-slate-200">${item.entry_1}</span>
+                <div class="p-3 bg-gray-800/50 rounded-lg text-brand-accent text-xl">
+                    <i class="fa-solid fa-satellite-dish"></i>
                 </div>
-                <div class="flex justify-between text-sm">
-                  <span class="text-slate-400">Entry DCA:</span>
-                  <span class="mono font-semibold text-amber-400">${item.entry_dca}</span>
-                </div>
-                <div class="flex justify-between text-sm pt-1 border-t border-slate-800">
-                  <span class="text-slate-400">Stop Loss:</span>
-                  <span class="mono font-semibold text-rose-400">${item.stop_loss}</span>
-                </div>
-              </div>
-
-              <div class="bg-slate-950/40 rounded-xl p-3 space-y-1.5 mb-3 border border-slate-800/50 text-xs">
-                <div class="flex justify-between">
-                  <span class="text-slate-400">TP 1 (50% Vol):</span>
-                  <span class="mono text-emerald-400 font-medium">${item.tp1}</span>
-                </div>
-                <div class="flex justify-between">
-                  <span class="text-slate-400">TP 2 (30% Vol):</span>
-                  <span class="mono text-emerald-400 font-medium">${item.tp2}</span>
-                </div>
-                <div class="flex justify-between">
-                  <span class="text-slate-400">TP 3 (20% Vol):</span>
-                  <span class="mono text-emerald-400 font-medium">${item.tp3}</span>
-                </div>
-              </div>
-
-              <div class="bg-slate-950/60 rounded-xl p-3 mb-4 border border-slate-800 text-xs space-y-1.5">
-                <div class="flex justify-between items-center">
-                  <span class="text-slate-400">Rủi ro (Risk):</span>
-                  <span class="mono font-bold text-amber-400">${item.risk_pct}% TK (~$${item.risk_usdt})</span>
-                </div>
-                <div class="flex justify-between items-center">
-                  <span class="text-slate-400">Đòn bẩy:</span>
-                  <span class="mono font-bold text-cyan-400">${item.leverage}x</span>
-                </div>
-                <div class="flex justify-between items-center">
-                  <span class="text-slate-400">Margin ký quỹ (TK $1000):</span>
-                  <span class="mono font-semibold text-slate-200">$${item.margin_usdt} (${item.margin_pct}%)</span>
-                </div>
-              </div>
             </div>
 
-            <div class="pt-3 border-t border-slate-800 text-xs">
-              <p class="text-slate-300">💡 <b>Cơ sở:</b> ${item.reason}</p>
-              <div class="mt-2 text-[10px] text-slate-500 text-right mono">${item.time_str}</div>
+            <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex items-center justify-between">
+                <div>
+                    <p class="text-xs text-gray-400 font-medium uppercase">Tỉ lệ Thắng (Winrate)</p>
+                    <p class="text-2xl font-bold text-emerald-400 mt-1">78.5%</p>
+                    <p class="text-xs text-gray-400 mt-1">Dựa trên 120 lệnh gần nhất</p>
+                </div>
+                <div class="p-3 bg-emerald-500/10 rounded-lg text-emerald-400 text-xl">
+                    <i class="fa-solid fa-trophy"></i>
+                </div>
             </div>
-          </div>
-        `;
-        signalsGrid.innerHTML += cardHTML;
-      });
-    }
-  </script>
+
+            <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex items-center justify-between">
+                <div>
+                    <p class="text-xs text-gray-400 font-medium uppercase">BTC Trend Bias</p>
+                    <p class="text-2xl font-bold text-emerald-400 mt-1">BULLISH <span class="text-xs text-gray-400 font-normal">(H4/D1)</span></p>
+                    <p class="text-xs text-gray-400 mt-1">Ưu tiên tín hiệu Long</p>
+                </div>
+                <div class="p-3 bg-emerald-500/10 rounded-lg text-emerald-400 text-xl">
+                    <i class="fa-solid fa-chart-line"></i>
+                </div>
+            </div>
+
+            <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex items-center justify-between">
+                <div>
+                    <p class="text-xs text-gray-400 font-medium uppercase">Khuyến nghị Risk</p>
+                    <p class="text-2xl font-bold text-brand-accent mt-1">1.5% - 2%</p>
+                    <p class="text-xs text-gray-400 mt-1">Margin max: 10% / Lệnh</p>
+                </div>
+                <div class="p-3 bg-yellow-500/10 rounded-lg text-brand-accent text-xl">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Middle Section: Chart & Quick Stats -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Market Overview Chart -->
+            <div class="lg:col-span-2 bg-brand-card border border-brand-border rounded-xl p-5">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-chart-area text-brand-accent"></i> Xu Hướng & Tần Suất Tín Hiệu
+                    </h2>
+                    <span class="text-xs text-gray-400">Cập nhật 1 phút trước</span>
+                </div>
+                <div class="h-64">
+                    <canvas id="signalsChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Strategy Profile Breakdown -->
+            <div class="bg-brand-card border border-brand-border rounded-xl p-5 flex flex-col justify-between">
+                <div>
+                    <h2 class="text-sm font-bold text-white uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <i class="fa-solid fa-sliders text-brand-accent"></i> Cấu Hình Chiến Lược
+                    </h2>
+                    <div class="space-y-4">
+                        <div class="p-3 bg-brand-dark rounded-lg border border-brand-border">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="text-xs font-bold text-white">SCALP (M15)</span>
+                                <span class="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">Risk: 1%</span>
+                            </div>
+                            <p class="text-xs text-gray-400">Đòn bẩy: 20x - 50x | Filter: RSI Oversold + Hammer</p>
+                        </div>
+
+                        <div class="p-3 bg-brand-dark rounded-lg border border-brand-border">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="text-xs font-bold text-white">SWING (H1)</span>
+                                <span class="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded">Risk: 2%</span>
+                            </div>
+                            <p class="text-xs text-gray-400">Đòn bẩy: 10x - 20x | Filter: H4/D1 Trend Đồng thuận</p>
+                        </div>
+
+                        <div class="p-3 bg-brand-dark rounded-lg border border-brand-border">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="text-xs font-bold text-white">POSITION (H4)</span>
+                                <span class="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded">Risk: 3%</span>
+                            </div>
+                            <p class="text-xs text-gray-400">Đòn bẩy: 5x - 10x | Filter: Xu hướng D1 cực mạnh</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Table Section: Realtime Signals -->
+        <div class="bg-brand-card border border-brand-border rounded-xl overflow-hidden">
+            <!-- Table Header Actions -->
+            <div class="p-4 border-b border-brand-border flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div class="flex items-center gap-2">
+                    <h2 class="text-base font-bold text-white">Tín Hiệu Gần Đây</h2>
+                    <span class="bg-brand-border text-xs px-2 py-0.5 rounded text-gray-300 font-mono">Live</span>
+                </div>
+
+                <!-- Filter Buttons -->
+                <div class="flex items-center space-x-2 text-xs">
+                    <button class="px-3 py-1.5 rounded-lg bg-brand-accent text-black font-semibold">Tất Cả</button>
+                    <button class="px-3 py-1.5 rounded-lg bg-brand-dark text-gray-400 hover:text-white border border-brand-border transition">M15 (Scalp)</button>
+                    <button class="px-3 py-1.5 rounded-lg bg-brand-dark text-gray-400 hover:text-white border border-brand-border transition">H1 (Swing)</button>
+                    <button class="px-3 py-1.5 rounded-lg bg-brand-dark text-gray-400 hover:text-white border border-brand-border transition">H4 (Position)</button>
+                </div>
+            </div>
+
+            <!-- Signal Table -->
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs text-gray-300">
+                    <thead class="bg-brand-dark text-gray-400 uppercase font-semibold text-[11px] tracking-wider border-b border-brand-border">
+                        <tr>
+                            <th class="p-4">Cặp Coin / Khung</th>
+                            <th class="p-4">Vị Thế</th>
+                            <th class="p-4">Entry DCA 1 / DCA 2</th>
+                            <th class="p-4">Take Profit (TP)</th>
+                            <th class="p-4">Stop Loss (SL)</th>
+                            <th class="p-4">Đòn Bẩy & Risk</th>
+                            <th class="p-4">Thời Gian</th>
+                            <th class="p-4 text-right">Thao Tác</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-brand-border">
+                        <!-- Row 1: Long Signal -->
+                        <tr class="hover:bg-gray-800/30 transition">
+                            <td class="p-4">
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-bold text-white text-sm">ETHUSDT</span>
+                                    <span class="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono text-[10px]">M15</span>
+                                </div>
+                            </td>
+                            <td class="p-4">
+                                <span class="bg-brand-long/10 text-brand-long border border-brand-long/20 font-bold px-2.5 py-1 rounded-md text-[11px] inline-flex items-center gap-1">
+                                    <i class="fa-solid fa-arrow-trend-up"></i> LONG
+                                </span>
+                            </td>
+                            <td class="p-4 font-mono">
+                                <div class="text-white font-medium">3,420.50 <span class="text-xs text-gray-500">(40%)</span></div>
+                                <div class="text-gray-400 text-[11px]">3,390.00 <span class="text-xs text-gray-500">(60%)</span></div>
+                            </td>
+                            <td class="p-4 font-mono text-brand-long font-medium">
+                                3,550.00
+                            </td>
+                            <td class="p-4 font-mono text-brand-short font-medium">
+                                3,350.00
+                            </td>
+                            <td class="p-4">
+                                <span class="text-brand-accent font-bold font-mono">25x</span>
+                                <span class="text-gray-400 text-[11px] block">Risk: 1.5%</span>
+                            </td>
+                            <td class="p-4 text-gray-400 font-mono text-[11px]">
+                                18:42:10
+                            </td>
+                            <td class="p-4 text-right">
+                                <a href="https://www.binance.com/en/futures/ETHUSDT" target="_blank" class="bg-brand-dark hover:bg-gray-700 text-white border border-brand-border px-3 py-1.5 rounded-md text-xs transition">
+                                    Trade <i class="fa-solid fa-arrow-up-right-from-square text-[10px] ml-1"></i>
+                                </a>
+                            </td>
+                        </tr>
+
+                        <!-- Row 2: Short Signal -->
+                        <tr class="hover:bg-gray-800/30 transition">
+                            <td class="p-4">
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-bold text-white text-sm">SOLUSDT</span>
+                                    <span class="bg-purple-500/10 text-purple-400 border border-purple-500/20 px-1.5 py-0.5 rounded font-mono text-[10px]">H1</span>
+                                </div>
+                            </td>
+                            <td class="p-4">
+                                <span class="bg-brand-short/10 text-brand-short border border-brand-short/20 font-bold px-2.5 py-1 rounded-md text-[11px] inline-flex items-center gap-1">
+                                    <i class="fa-solid fa-arrow-trend-down"></i> SHORT
+                                </span>
+                            </td>
+                            <td class="p-4 font-mono">
+                                <div class="text-white font-medium">145.20 <span class="text-xs text-gray-500">(40%)</span></div>
+                                <div class="text-gray-400 text-[11px]">148.00 <span class="text-xs text-gray-500">(60%)</span></div>
+                            </td>
+                            <td class="p-4 font-mono text-brand-long font-medium">
+                                132.50
+                            </td>
+                            <td class="p-4 font-mono text-brand-short font-medium">
+                                151.00
+                            </td>
+                            <td class="p-4">
+                                <span class="text-brand-accent font-bold font-mono">15x</span>
+                                <span class="text-gray-400 text-[11px] block">Risk: 2.0%</span>
+                            </td>
+                            <td class="p-4 text-gray-400 font-mono text-[11px]">
+                                17:15:05
+                            </td>
+                            <td class="p-4 text-right">
+                                <a href="https://www.binance.com/en/futures/SOLUSDT" target="_blank" class="bg-brand-dark hover:bg-gray-700 text-white border border-brand-border px-3 py-1.5 rounded-md text-xs transition">
+                                    Trade <i class="fa-solid fa-arrow-up-right-from-square text-[10px] ml-1"></i>
+                                </a>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-brand-border bg-brand-card py-4 px-6 text-center text-xs text-gray-500">
+        <p>© 2026 Alpha Signal Engine. All Trading Signals originate from Automated Quantitative Analysis.</p>
+    </footer>
+
+    <!-- Chart Config JavaScript -->
+    <script>
+        const ctx = document.getElementById('signalsChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00'],
+                datasets: [{
+                    label: 'Số tín hiệu phát hiện',
+                    data: [3, 5, 2, 8, 12, 6],
+                    borderColor: '#FCD535',
+                    backgroundColor: 'rgba(252, 213, 53, 0.05)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { grid: { color: '#2B313A' }, ticks: { color: '#848E9C' } },
+                    y: { grid: { color: '#2B313A' }, ticks: { color: '#848E9C' } }
+                }
+            }
+        });
+    </script>
 </body>
 </html>
