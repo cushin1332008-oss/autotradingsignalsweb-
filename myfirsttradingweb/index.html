@@ -34,7 +34,6 @@
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #181A20; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #2B313A; border-radius: 3px; }
-        .filter-btn-active { background-color: #FCD535 !important; color: #000000 !important; font-weight: 700 !important; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col custom-scrollbar">
@@ -48,7 +47,7 @@
                 <h1 class="text-lg font-bold tracking-wide text-white leading-tight flex items-center gap-2">
                     ALPHA SIGNAL <span class="text-brand-accent text-xs px-2 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/20">QUANT PRO</span>
                 </h1>
-                <p class="text-xs text-gray-400">Live Screener & Vol Calculator</p>
+                <p class="text-xs text-gray-400">Live Screener & Multi-Filter Dashboard</p>
             </div>
         </div>
         <div class="flex items-center space-x-4">
@@ -64,78 +63,27 @@
 
     <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Biểu đồ TV -->
-            <div class="lg:col-span-2 bg-brand-card border border-brand-border rounded-xl p-4">
-                <div class="flex items-center justify-between mb-3 px-2">
-                    <div class="flex items-center gap-3">
-                        <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                            <i class="fa-solid fa-chart-candlestick text-brand-accent"></i> Biểu Đồ Live
-                        </h2>
-                        <span id="active-symbol-tag" class="bg-brand-accent/10 border border-brand-accent/30 text-brand-accent text-xs px-2.5 py-0.5 rounded font-mono font-bold">BINANCE:BTCUSDT</span>
-                    </div>
-                </div>
-                <div class="w-full h-[450px] rounded-lg overflow-hidden border border-brand-border" id="tradingview_chart"></div>
-            </div>
-
-            <!-- Risk Calc -->
-            <div class="bg-brand-card border border-brand-border rounded-xl p-4 flex flex-col justify-between">
-                <div>
-                    <h2 class="text-sm font-bold text-white uppercase tracking-wider mb-4 flex items-center gap-2 border-b border-brand-border pb-2">
-                        <i class="fa-solid fa-calculator text-brand-accent"></i> Công Cụ Tính Vol & Risk
+        <!-- Biểu đồ TradingView toàn chiều rộng (Full-width) -->
+        <div class="bg-brand-card border border-brand-border rounded-xl p-4">
+            <div class="flex items-center justify-between mb-3 px-2">
+                <div class="flex items-center gap-3">
+                    <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-chart-candlestick text-brand-accent"></i> Biểu Đồ Kỹ Thuật Live
                     </h2>
-                    
-                    <div class="space-y-3 text-xs">
-                        <div>
-                            <label class="text-gray-400 block mb-1">Tổng Vốn ($)</label>
-                            <input type="number" id="calc-balance" value="1000" class="w-full bg-brand-dark border border-brand-border rounded p-2 text-white font-mono focus:outline-none focus:border-brand-accent">
-                        </div>
-                        <div>
-                            <label class="text-gray-400 block mb-1">% Risk / Lệnh</label>
-                            <input type="number" id="calc-risk" value="2.0" step="0.5" class="w-full bg-brand-dark border border-brand-border rounded p-2 text-white font-mono focus:outline-none focus:border-brand-accent">
-                        </div>
-                        <div class="grid grid-cols-2 gap-2">
-                            <div>
-                                <label class="text-gray-400 block mb-1">Giá Entry 1</label>
-                                <input type="number" id="calc-entry" placeholder="65000" class="w-full bg-brand-dark border border-brand-border rounded p-2 text-white font-mono focus:outline-none focus:border-brand-accent">
-                            </div>
-                            <div>
-                                <label class="text-gray-400 block mb-1">Giá Stop Loss</label>
-                                <input type="number" id="calc-sl" placeholder="64200" class="w-full bg-brand-dark border border-brand-border rounded p-2 text-white font-mono focus:outline-none focus:border-brand-accent">
-                            </div>
-                        </div>
-                        <div>
-                            <label class="text-gray-400 block mb-1">Đòn Bẩy (20x-100x+)</label>
-                            <input type="number" id="calc-leverage" value="20" class="w-full bg-brand-dark border border-brand-border rounded p-2 text-white font-mono focus:outline-none focus:border-brand-accent">
-                        </div>
-                        <button onclick="calculatePositionRisk()" class="w-full bg-brand-accent hover:bg-yellow-400 text-black font-bold py-2 rounded transition mt-2">
-                            Tính Margin
-                        </button>
-                    </div>
+                    <span id="active-symbol-tag" class="bg-brand-accent/10 border border-brand-accent/30 text-brand-accent text-xs px-2.5 py-0.5 rounded font-mono font-bold">BINANCE:BTCUSDT</span>
                 </div>
-
-                <div class="mt-4 p-3 bg-brand-dark border border-brand-border rounded-lg space-y-2 text-xs">
-                    <div class="flex justify-between">
-                        <span class="text-gray-400">Số Tiền Lỗ Tối Đa:</span>
-                        <span id="out-max-risk" class="font-mono text-brand-short font-bold">$0.00</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span class="text-gray-400">Tổng Vị Thế (Size):</span>
-                        <span id="out-pos-size" class="font-mono text-white font-bold">$0.00</span>
-                    </div>
-                    <div class="flex justify-between border-t border-brand-border pt-2">
-                        <span class="text-gray-400 font-bold">Ký Quỹ (Margin):</span>
-                        <span id="out-margin" class="font-mono text-brand-accent font-bold text-sm">$0.00</span>
-                    </div>
-                </div>
+                <span class="text-xs text-gray-400">💡 Bấm vào bất kỳ dòng tín hiệu nào bên dưới để chuyển biểu đồ lập tức</span>
             </div>
+            <div class="w-full h-[520px] rounded-lg overflow-hidden border border-brand-border" id="tradingview_chart"></div>
         </div>
 
+        <!-- Bảng Tín Hiệu -->
         <div class="bg-brand-card border border-brand-border rounded-xl overflow-hidden">
-            <div class="p-4 border-b border-brand-border flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                <div class="flex items-center gap-2">
-                    <h2 class="text-base font-bold text-white">Bảng Tín Hiệu (Chạm Entry thì vào)</h2>
-                </div>
+            <div class="p-4 border-b border-brand-border flex flex-col sm:flex-row items-center justify-between gap-4">
+                <h2 class="text-base font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-list text-brand-accent"></i> Danh Sách Tín Hiệu Auto Screener
+                </h2>
+                <span class="text-xs text-gray-400">Tự động đồng bộ mỗi 10 giây</span>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-xs text-gray-300">
@@ -146,7 +94,7 @@
                             <th class="p-4">Entry 1 / DCA 2 (60%)</th>
                             <th class="p-4">Take Profit</th>
                             <th class="p-4">Stop Loss</th>
-                            <th class="p-4">Quản Lý Vốn</th>
+                            <th class="p-4">Đòn Bẩy</th>
                             <th class="p-4">Giờ</th>
                         </tr>
                     </thead>
@@ -178,16 +126,14 @@
             });
         }
 
-        function switchChart(symbol, entry1, sl) {
+        function switchChart(symbol) {
             loadTradingViewWidget(`BINANCE:${symbol}`, "15");
-            if (entry1) document.getElementById('calc-entry').value = entry1.replace(/,/g, '');
-            if (sl) document.getElementById('calc-sl').value = sl.replace(/,/g, '');
         }
 
         function renderSignalTable() {
             const tbody = document.getElementById('signal-table-body');
             if (rawSignalsData.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-gray-500">Chưa có tín hiệu mới.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-gray-500">Chưa có tín hiệu mới từ Screener.</td></tr>`;
                 return;
             }
 
@@ -197,7 +143,7 @@
                 const posClass = isLong ? 'bg-brand-long/10 text-brand-long' : 'bg-brand-short/10 text-brand-short';
                 
                 html += `
-                <tr onclick="switchChart('${sig.symbol}', '${sig.entry1}', '${sig.sl}')" class="hover:bg-gray-800/50 cursor-pointer transition">
+                <tr onclick="switchChart('${sig.symbol}')" class="hover:bg-gray-800/50 cursor-pointer transition">
                     <td class="p-4 font-bold text-white">#${sig.symbol} <span class="text-[10px] bg-blue-500/10 text-blue-400 px-1 rounded">${sig.tf}</span></td>
                     <td class="p-4"><span class="${posClass} px-2 py-1 rounded font-bold text-[11px]">${sig.position}</span></td>
                     <td class="p-4 font-mono">
@@ -211,30 +157,6 @@
                 </tr>`;
             });
             tbody.innerHTML = html;
-        }
-
-        async function calculatePositionRisk() {
-            const bodyData = {
-                account_balance: document.getElementById('calc-balance').value,
-                risk_percent: document.getElementById('calc-risk').value,
-                entry_price: document.getElementById('calc-entry').value,
-                sl_price: document.getElementById('calc-sl').value,
-                leverage: document.getElementById('calc-leverage').value
-            };
-
-            try {
-                const res = await fetch('/api/calculate-risk', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(bodyData)
-                });
-                const result = await res.json();
-                if (result.status === 'success') {
-                    document.getElementById('out-max-risk').innerText = `$${result.data.max_risk_amount}`;
-                    document.getElementById('out-pos-size').innerText = `$${result.data.total_position_size}`;
-                    document.getElementById('out-margin').innerText = `$${result.data.required_margin}`;
-                }
-            } catch (err) {}
         }
 
         async function fetchSignals() {
@@ -251,7 +173,6 @@
         window.addEventListener('DOMContentLoaded', () => {
             loadTradingViewWidget("BINANCE:BTCUSDT", "15");
             fetchSignals();
-            // Polling giãn ra 10s (10000ms) để tải êm hơn, không bị lag web
             setInterval(fetchSignals, 10000); 
         });
     </script>
