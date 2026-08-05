@@ -1,25 +1,36 @@
 import time
-import random
 import requests
+import pandas as pd
 from datetime import datetime
 
-# Webhook Endpoint (Thay bằng URL thật trên Render nếu chạy độc lập)
 WEBHOOK_URL = "http://127.0.0.1:5000/api/webhook"
-
 SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT", "DOGEUSDT"]
 COOLDOWN_TRACKER = {}
-COOLDOWN_SECONDS = 300  # 5 phút Cooldown cho mỗi cặp coin
+COOLDOWN_SECONDS = 300
 
-def get_binance_futures_price(symbol):
-    """Lấy giá Futures Realtime trực tiếp từ API Binance"""
+def get_klines(symbol, timeframe="15m", limit=50):
+    """Lấy dữ liệu nến thực tế từ Binance Futures API"""
     try:
-        url = f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={symbol}"
+        url = f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval={timeframe}&limit={limit}"
         res = requests.get(url, timeout=5)
         if res.status_code == 200:
-            return float(res.json()['price'])
+            df = pd.DataFrame(res.json(), columns=[
+                'time', 'open', 'high', 'low', 'close', 'volume',
+                'close_time', 'qav', 'num_trades', 'taker_base', 'taker_quote', 'ignore'
+            ])
+            df['close'] = df['close'].astype(float)
+            return df
     except Exception as e:
-        print(f"Lỗi lấy giá Binance cho {symbol}: {e}")
+        print(f"Lỗi lấy dữ liệu nến {symbol}: {e}")
     return None
+
+def calculate_rsi(df, period=14):
+    """Tính chỉ báo Kỹ thuật RSI chuẩn"""
+    delta = df['close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
 
 def format_price(price):
     if price >= 1000:
@@ -29,67 +40,77 @@ def format_price(price):
     else:
         return f"{price:.4f}"
 
-def generate_and_send_signal(symbol, position_type="LONG", timeframe="M15"):
-    price = get_binance_futures_price(symbol)
-    if not price:
-        return
+def analyze_and_screen():
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔍 Đang quét phân tích kỹ thuật trên Binance Futures...")
+    
+    for symbol in SYMBOLS:
+        df = get_klines(symbol, timeframe="15m")
+        if df is None or len(df) < 20:
+            continue
 
-    key = f"{symbol}_{timeframe}"
-    now_ts = time.time()
-    if key in COOLDOWN_TRACKER and (now_ts - COOLDOWN_TRACKER[key]) < COOLDOWN_SECONDS:
-        return
+        rsi_series = calculate_rsi(df)
+        last_rsi = rsi_series.iloc[-1]
+        last_price = df['close'].iloc[-1]
 
-    if position_type == "LONG":
-        entry1 = price
-        entry2 = price * 0.992
-        tp = price * 1.025
-        sl = price * 0.988
-        leverage = "20x"
-        risk = "1.5%"
-    else:
-        entry1 = price
-        entry2 = price * 1.008
-        tp = price * 0.975
-        sl = price * 1.012
-        leverage = "15x"
-        risk = "2.0%"
+        # Thuật toán kích hoạt tín hiệu Quantitative:
+        # Tín hiệu LONG khi RSI < 35 (Vùng Quá Bán)
+        # Tín hiệu SHORT khi RSI > 65 (Vùng Quá Mua)
+        position = None
+        if last_rsi < 35:
+            position = "LONG"
+        elif last_rsi > 65:
+            position = "SHORT"
 
-    payload = {
-        "symbol": symbol,
-        "tf": timeframe,
-        "position": position_type,
-        "entry1": format_price(entry1),
-        "entry2": format_price(entry2),
-        "tp": format_price(tp),
-        "sl": format_price(sl),
-        "leverage": leverage,
-        "risk": risk,
-        "status": "ACTIVE",
-        "time": datetime.now().strftime("%H:%M:%S")
-    }
+        if position:
+            key = f"{symbol}_M15"
+            now_ts = time.time()
+            if key in COOLDOWN_TRACKER and (now_ts - COOLDOWN_TRACKER[key]) < COOLDOWN_SECONDS:
+                continue
 
-    try:
-        response = requests.post(WEBHOOK_URL, json=payload, timeout=5)
-        if response.status_code == 200:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Đã phát tín hiệu {symbol} ({position_type}) | Giá: {format_price(price)}")
-            COOLDOWN_TRACKER[key] = now_ts
-        else:
-            print(f"❌ Thất bại: {response.status_code}")
-    except Exception as e:
-        print(f"❌ Lỗi Webhook: {e}")
+            if position == "LONG":
+                entry1 = last_price
+                entry2 = last_price * 0.992
+                tp = last_price * 1.025
+                sl = last_price * 0.988
+                leverage = "20x"
+                risk = "1.5%"
+            else:
+                entry1 = last_price
+                entry2 = last_price * 1.008
+                tp = last_price * 0.975
+                sl = last_price * 1.012
+                leverage = "15x"
+                risk = "2.0%"
+
+            payload = {
+                "symbol": symbol,
+                "tf": "M15",
+                "position": position,
+                "entry1": format_price(entry1),
+                "entry2": format_price(entry2),
+                "tp": format_price(tp),
+                "sl": format_price(sl),
+                "leverage": leverage,
+                "risk": risk,
+                "status": "ACTIVE"
+            }
+
+            try:
+                res = requests.post(WEBHOOK_URL, json=payload, timeout=5)
+                if res.status_code == 200:
+                    print(f"✅ [SIGNAL GENERATED] {symbol} | {position} | RSI: {last_rsi:.1f} | Giá: {format_price(last_price)}")
+                    COOLDOWN_TRACKER[key] = now_ts
+            except Exception as e:
+                print(f"Lỗi gửi Webhook: {e}")
 
 def run_screener():
-    print("🚀 Auto-Screener Engine đã kích hoạt...")
+    print("🚀 Quantitative Auto-Screener Engine 2026 đang chạy...")
     while True:
         try:
-            symbol = random.choice(SYMBOLS)
-            position = random.choice(["LONG", "SHORT"])
-            tf = random.choice(["M15", "H1", "H4"])
-
-            generate_and_send_signal(symbol, position, tf)
-            time.sleep(15)
+            analyze_and_screen()
+            time.sleep(20)
         except Exception as e:
-            print(f"Lỗi vòng lặp: {e}")
+            print(f"Lỗi vòng lặp Screener: {e}")
             time.sleep(10)
 
 if __name__ == "__main__":
