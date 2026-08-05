@@ -1,10 +1,6 @@
 """
-autoscreener.py — Worker chạy ngầm chuyên dụng quét tín hiệu
+autoscreener.py — Worker chạy ngầm phân tích và gửi cảnh báo
 ------------------------------------------------------------
-- Quét định kỳ 5 phút/lần
-- Lấy BTC làm hệ quy chiếu (Trend Context)
-- Lọc toàn bộ Altcoin trong Watchlist
-- Gửi dữ liệu lên Firebase & Bắn thông báo Telegram
 """
 
 import os
@@ -19,7 +15,6 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# Import các hàm phân tích cốt lõi từ file indicators.py
 from indicators import (
     TIMEFRAMES, analyze_timeframe, generate_all_signals, calc_position_sizing
 )
@@ -29,9 +24,6 @@ VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 def now_vn_str():
     return datetime.now(VN_TZ).strftime('%H:%M:%S %d/%m/%Y')
 
-# ==========================================
-# 1. CẤU HÌNH FIREBASE
-# ==========================================
 secret_path = "/etc/secrets/firebase.json"
 env_cred = os.environ.get("FIREBASE_CREDENTIALS")
 local_path = "serviceAccountKey.json"
@@ -53,12 +45,9 @@ if not firebase_admin._apps:
 ref = db.reference('signals')
 session = requests.Session()
 
-# ==========================================
-# 2. CẤU HÌNH TELEGRAM & RỦI RO
-# ==========================================
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-CUSTOM_LEVERAGE = int(os.environ.get("DEFAULT_LEVERAGE", "50"))  # Mặc định bẩy 50x, hỗ trợ 20x - 500x
+CUSTOM_LEVERAGE = int(os.environ.get("DEFAULT_LEVERAGE", "50"))
 
 _last_alerted = {}
 
@@ -86,9 +75,6 @@ def send_telegram_alert(item):
     except Exception as e:
         print(f"[⚠️ TELEGRAM ERROR] {item.get('symbol')}: {e}")
 
-# ==========================================
-# 3. LẤY DỮ LIỆU BINANCE
-# ==========================================
 def get_klines(symbol: str, interval: str, limit: int = 200):
     try:
         res = session.get(
@@ -119,15 +105,11 @@ def analyze_symbol_tf(symbol):
             tf_results[tf_label] = res
     return tf_results
 
-# ==========================================
-# 4. CHU TRÌNH QUÉT CHÍNH (CORE LOGIC)
-# ==========================================
 def run_screener():
     print(f"\n[🚀 SCREENER] Bắt đầu quét lúc: {now_vn_str()}")
     watchlist = ["ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "NEARUSDT", "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT"]
     signals_to_upload = {}
 
-    # 4.1. Phân tích BTC trước để làm chuẩn Trend
     btc_tf_results = analyze_symbol_tf("BTCUSDT")
     btc_signals = generate_all_signals(btc_tf_results, is_btc=True)
     
@@ -137,10 +119,8 @@ def run_screener():
             "symbol": "BTCUSDT", **signal, **sizing, "time_str": now_vn_str()
         }
 
-    # 4.2. Xử lý đa luồng cho các Altcoin
     def process_altcoin(symbol):
         tf_results = analyze_symbol_tf(symbol)
-        # Sử dụng btc_tf_results làm context lọc
         signals = generate_all_signals(tf_results, btc_context=btc_tf_results, is_btc=False)
         res = {}
         for profile_key, signal in signals.items():
@@ -158,30 +138,20 @@ def run_screener():
             except Exception as e:
                 print(f"[⚠️ ERROR] {e}")
 
-    # 4.3. Cập nhật Firebase
     ref.set(signals_to_upload)
     print(f"[🔥 FIREBASE] Đã cập nhật {len(signals_to_upload)} tín hiệu tuân thủ Trend BTC.")
 
-    # 4.4. Bắn thông báo Telegram (chỉ thông báo tín hiệu mới / thay đổi trạng thái)
     global _last_alerted
     for key, item in signals_to_upload.items():
         if _last_alerted.get(key) != item["signal"]:
             send_telegram_alert(item)
     _last_alerted = {key: item["signal"] for key, item in signals_to_upload.items()}
 
-# ==========================================
-# 5. KHỞI ĐỘNG HỆ THỐNG SCHEDULER
-# ==========================================
 if __name__ == "__main__":
     print(f"[✅ INITIALIZE] Khởi động Auto Screener ({now_vn_str()})")
-    
-    # Chạy quét lần đầu ngay khi bật
     run_screener()
-    
-    # Sử dụng BlockingScheduler để giữ script chạy ngầm vĩnh viễn
     scheduler = BlockingScheduler()
     scheduler.add_job(run_screener, 'interval', minutes=5)
-    
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
