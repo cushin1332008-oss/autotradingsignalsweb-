@@ -13,7 +13,7 @@ def home():
 
 @app.route('/api/signals', methods=['GET'])
 def fetch_signals():
-    """API cho Frontend gọi lấy danh sách tín hiệu"""
+    """API cho Frontend lấy danh sách tín hiệu"""
     return jsonify({
         "status": "success",
         "total": len(STORED_SIGNALS),
@@ -22,7 +22,7 @@ def fetch_signals():
 
 @app.route('/api/webhook', methods=['POST'])
 def receive_webhook():
-    """API tiếp nhận tín hiệu tự động đẩy từ autoscreener.py"""
+    """API tiếp nhận tín hiệu từ autoscreener.py"""
     try:
         data = request.get_json()
         if not data:
