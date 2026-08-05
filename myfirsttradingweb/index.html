@@ -49,12 +49,15 @@
             </div>
             <div>
                 <h1 class="text-lg font-black tracking-wide text-white leading-tight flex items-center gap-2">
-                    CU SHIN PRO SIGNALS BOT <span class="text-brand-accent text-xs px-2 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/20 font-bold">QUANT INSTITUTIONAL</span>
+                    CU SHIN PRO SIGNALS BOT <span class="text-brand-accent text-xs px-2 py-0.5 rounded bg-yellow-500/10 border border-yellow-500/20 font-bold">TOP 100 QUANT</span>
                 </h1>
                 <p class="text-xs text-gray-400">Hệ Thống Tín Hiệu Định Quantitative & DCA Tối Ưu Lợi Nhuận</p>
             </div>
         </div>
         <div class="flex items-center space-x-4">
+            <button onclick="fetchSignals()" class="text-xs bg-brand-border hover:bg-brand-accent hover:text-black text-white px-3 py-1.5 rounded-lg transition font-bold flex items-center gap-1.5">
+                <i class="fa-solid fa-rotate"></i> Làm mới
+            </button>
             <div class="flex items-center space-x-2 text-xs bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg">
                 <span class="relative flex h-2.5 w-2.5">
                     <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -86,7 +89,7 @@
                 </div>
                 <div>
                     <h3 class="text-xs text-gray-400 font-semibold uppercase">Đòn Bẩy Khuyến Nghị</h3>
-                    <p class="text-sm font-bold text-white mt-0.5">Linh Hoạt 50x - 200x (Tối đa 500x)</p>
+                    <p class="text-sm font-bold text-white mt-0.5">Linh Hoạt 50x - 500x</p>
                 </div>
             </div>
 
@@ -95,8 +98,8 @@
                     <i class="fa-solid fa-bolt-lightning"></i>
                 </div>
                 <div>
-                    <h3 class="text-xs text-gray-400 font-semibold uppercase">Tần Suất Quét Bot</h3>
-                    <p class="text-sm font-bold text-white mt-0.5">Real-time (M5, M15, H1, H4)</p>
+                    <h3 class="text-xs text-gray-400 font-semibold uppercase">Phạm Vi Quét Tự Động</h3>
+                    <p class="text-sm font-bold text-white mt-0.5">Top 100 Coin (M5, M15, H1, H4)</p>
                 </div>
             </div>
         </div>
@@ -128,7 +131,7 @@
                         </tr>
                     </thead>
                     <tbody id="signal-table-body" class="divide-y divide-brand-border">
-                        <tr><td colspan="7" class="p-12 text-center text-gray-500 font-medium">Đang tải cơ sở dữ liệu tín hiệu thông minh...</td></tr>
+                        <tr><td colspan="7" class="p-12 text-center text-gray-500 font-medium">Đang kết nối tới server tín hiệu...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -140,8 +143,14 @@
 
         function renderSignalTable() {
             const tbody = document.getElementById('signal-table-body');
-            if (rawSignalsData.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="p-12 text-center text-gray-500 font-medium">Hệ thống đang quét các điều kiện khắt khe (EMA200 + RSI + Volume đa khung M5, M15, H1, H4). Vui lòng đợi tín hiệu chất lượng xuất hiện...</td></tr>`;
+            if (!rawSignalsData || rawSignalsData.length === 0) {
+                tbody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="p-12 text-center">
+                        <div class="text-gray-400 font-semibold mb-1">📭 Hiện chưa có tín hiệu mới từ Top 100 Coin</div>
+                        <div class="text-gray-500 text-[11px]">Bot đang lọc liên tục qua các khung M5, M15, H1, H4 theo điều kiện khắt khe. Tín hiệu sẽ tự động đẩy lên ngay khi xuất hiện!</div>
+                    </td>
+                </tr>`;
                 return;
             }
 
