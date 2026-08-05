@@ -1,6 +1,8 @@
-firebase-admin
-requests
+Flask
+gunicorn
 pandas
-pandas_ta==0.4.71b0
+pandas_ta
+requests
+firebase-admin
 apscheduler
-flask
+zoneinfo
