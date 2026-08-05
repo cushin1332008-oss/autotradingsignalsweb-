@@ -7,7 +7,7 @@ app = Flask(__name__)
 DB_NAME = 'database.db'
 
 def init_db():
-    """Khởi tạo SQLite Database với Index tối ưu hóa tốc độ tải"""
+    """Khởi tạo Database SQLite với Index tối ưu tốc độ"""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute('''
@@ -43,7 +43,7 @@ def home():
 
 @app.route('/api/signals', methods=['GET'])
 def fetch_signals():
-    """API lấy danh sách tín hiệu mới nhất"""
+    """API Truy xuất tín hiệu tốc độ cao (Giới hạn 100 tín hiệu mới nhất)"""
     try:
         conn = get_db_connection()
         signals = conn.execute('SELECT * FROM signals ORDER BY id DESC LIMIT 100').fetchall()
@@ -72,7 +72,7 @@ def fetch_signals():
 
 @app.route('/api/webhook', methods=['POST'])
 def receive_webhook():
-    """API tiếp nhận tín hiệu từ Bot Screener"""
+    """API Nhận tín hiệu từ hệ thống Auto Screener"""
     try:
         data = request.get_json()
         if not data:
@@ -90,14 +90,14 @@ def receive_webhook():
             data.get("entry2", "--"),
             data.get("tp", "--"),
             data.get("sl", "--"),
-            data.get("leverage", "20x - 100x+"),
-            data.get("risk", "Auto Filter"),
+            data.get("leverage", "50x - 200x"),
+            data.get("risk", "Chia Vol 40/60"),
             data.get("status", "ACTIVE")
         ))
         conn.commit()
         conn.close()
 
-        return jsonify({"status": "success", "message": "Đã lưu tín hiệu vào Database"}), 200
+        return jsonify({"status": "success", "message": "Lưu tín hiệu thành công"}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
