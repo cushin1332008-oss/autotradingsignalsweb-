@@ -231,10 +231,15 @@
                   <span class="text-slate-400">Stop Loss (SL):</span>
                   <span class="mono font-semibold text-rose-400">${item.stop_loss}</span>
                 </div>
+                ${item.tp_levels ? item.tp_levels.map(lv => `
+                <div class="flex justify-between items-center text-sm">
+                  <span class="text-slate-400">${lv.level} <span class="text-[10px] text-slate-600">(${lv.volume_pct}%)</span>:</span>
+                  <span class="mono font-semibold text-emerald-400">${lv.price} <span class="text-[10px] text-slate-500">1:${lv.rr}</span></span>
+                </div>`).join('') : `
                 <div class="flex justify-between items-center text-sm">
                   <span class="text-slate-400">Take Profit (TP):</span>
                   <span class="mono font-semibold text-emerald-400">${item.take_profit}</span>
-                </div>
+                </div>`}
                 <div class="flex justify-between items-center text-sm pt-2 border-t border-slate-800/60">
                   <span class="text-slate-400">Hỗ trợ / Kháng cự:</span>
                   <span class="mono text-slate-300">${item.support} / ${item.resistance}</span>
