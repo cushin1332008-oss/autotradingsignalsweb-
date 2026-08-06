@@ -220,22 +220,91 @@ def get_klines(symbol: str, interval: str, limit: int = 210):
         return None
 
 # ------------------------------------------------------------------
-# 5. QUÉT 1 COIN → SINH TÍN HIỆU CHO CẢ 3 PROFILE (SCALP/SWING/POSITION)
+# 4b. VÀNG (XAUUSD) & DẦU (USOIL) — dữ liệu từ Yahoo Finance (API công khai, KHÔNG CẦN key)
+# ------------------------------------------------------------------
+# LƯU Ý QUAN TRỌNG: Binance không có dữ liệu Vàng/Dầu (chỉ có crypto), nên 2 mã này
+# BẮT BUỘC phải lấy từ nguồn khác. Yahoo Finance endpoint dùng ở đây là API KHÔNG CHÍNH
+# THỨC (không tài liệu hóa công khai, không cam kết SLA) — độ ổn định THẤP HƠN Binance,
+# có thể gián đoạn/đổi định dạng bất cứ lúc nào. Nếu 2 mã này thường xuyên không ra dữ
+# liệu, đó là hạn chế của nguồn, không phải lỗi logic bot. Tắt qua ENABLE_COMMODITIES=false.
+ENABLE_COMMODITIES = os.environ.get("ENABLE_COMMODITIES", "true").lower() == "true"
+YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+
+COMMODITIES = {
+    "XAUUSD": {"yahoo_symbol": "GC=F", "label": "Vàng (Gold Futures)"},
+    "USOIL":  {"yahoo_symbol": "CL=F", "label": "Dầu thô WTI (Crude Oil Futures)"},
+}
+
+# Yahoo không có sẵn nến 4 giờ — lấy nến 1 giờ rồi tự gộp (resample) thành 4 giờ.
+YAHOO_INTERVAL_MAP = {
+    "15m": ("15m", "5d"),
+    "1h":  ("60m", "1mo"),
+    "4h":  ("60m", "3mo"),   # lấy 1h, gộp thành 4h bên dưới
+    "1d":  ("1d", "2y"),
+}
+
+def get_yahoo_klines(yahoo_symbol, our_interval, limit=210):
+    try:
+        yahoo_interval, yahoo_range = YAHOO_INTERVAL_MAP[our_interval]
+        url = YAHOO_CHART_URL.format(symbol=yahoo_symbol)
+        headers = {"User-Agent": "Mozilla/5.0"}  # Yahoo thường chặn request không có User-Agent
+        res = session.get(url, params={"interval": yahoo_interval, "range": yahoo_range},
+                           headers=headers, timeout=10)
+        data = res.json()
+        result = data.get("chart", {}).get("result")
+        if not result:
+            return None
+
+        r0 = result[0]
+        timestamps = r0.get("timestamp")
+        quote = r0.get("indicators", {}).get("quote", [{}])[0]
+        if not timestamps or not quote.get("close"):
+            return None
+
+        df = pd.DataFrame({
+            "open_time": [t * 1000 for t in timestamps],
+            "open": quote.get("open"),
+            "high": quote.get("high"),
+            "low": quote.get("low"),
+            "close": quote.get("close"),
+            "volume": quote.get("volume") or [0] * len(timestamps),
+        }).dropna()
+
+        if our_interval == "4h":
+            df["dt"] = pd.to_datetime(df["open_time"], unit="ms")
+            df = df.set_index("dt").resample("4h").agg({
+                "open_time": "first", "open": "first", "high": "max",
+                "low": "min", "close": "last", "volume": "sum"
+            }).dropna().reset_index(drop=True)
+
+        return df.tail(limit).reset_index(drop=True)
+    except Exception as e:
+        print(f"[⚠️ YAHOO] Lỗi lấy dữ liệu {yahoo_symbol} ({our_interval}): {e}")
+        return None
+
+# ------------------------------------------------------------------
+# 5. QUÉT 1 MÃ (COIN hoặc HÀNG HOÁ) → SINH TÍN HIỆU CHO CẢ 3 PROFILE
 # ------------------------------------------------------------------
 def scan_symbol(symbol, volumes_map, btc_context=None):
+    is_commodity = symbol in COMMODITIES
     tf_results = {}
+
     for tf_label, interval in TIMEFRAMES.items():
-        df = get_klines(symbol, interval)
+        if is_commodity:
+            df = get_yahoo_klines(COMMODITIES[symbol]["yahoo_symbol"], interval)
+        else:
+            df = get_klines(symbol, interval)
         result = analyze_timeframe(df)
         if result:
             tf_results[tf_label] = result
 
-    # Không lọc BTC theo chính nó — chỉ áp dụng bộ lọc macro cho các altcoin khác
+    # Không lọc BTC theo chính nó — chỉ áp dụng bộ lọc macro cho các altcoin/hàng hoá khác
     ctx = None if symbol == "BTCUSDT" else btc_context
     all_signals = generate_all_signals(tf_results, btc_context=ctx)
     if not all_signals:
         return {}
 
+    asset_class = "commodity" if is_commodity else "crypto"
     volume_24h = volumes_map.get(symbol, 0)
     output = {}
 
@@ -243,15 +312,16 @@ def scan_symbol(symbol, volumes_map, btc_context=None):
         sizing = calc_position_sizing(
             entry=signal["entry"], stop_loss=signal["stop_loss"], confluence_pct=signal["confluence_pct"],
             profile_key=profile_key, margin_pct_anchor=MARGIN_PCT_ANCHOR,
-            account_balance=ACCOUNT_BALANCE_USDT
+            account_balance=ACCOUNT_BALANCE_USDT, asset_class=asset_class
         )
         key = f"{symbol}_{profile_key}"
         output[key] = {
             "symbol": symbol,
             **signal,
             **sizing,
+            "asset_class": asset_class,
             "volume_24h": round(volume_24h, 0),
-            "volume_24h_fmt": format_volume(volume_24h),
+            "volume_24h_fmt": "N/A (hàng hoá)" if is_commodity else format_volume(volume_24h),
             "time_str": now_vn_str()
         }
 
@@ -274,6 +344,8 @@ def health_check():
         "risk_percent_max": RISK_PERCENT_MAX_INFO,
         "margin_pct_anchor": MARGIN_PCT_ANCHOR,
         "profiles": list(TRADE_PROFILES.keys()),
+        "commodities_enabled": ENABLE_COMMODITIES,
+        "commodities": list(COMMODITIES.keys()) if ENABLE_COMMODITIES else [],
     }
 
 def run_web_server():
@@ -405,6 +477,8 @@ def scan_and_push_to_firebase():
     print(f"\n[🚀 SCANNING] Bắt đầu quét lúc: {now_vn_str()}...")
 
     watchlist = get_top_watchlist()
+    if ENABLE_COMMODITIES:
+        watchlist = watchlist + list(COMMODITIES.keys())  # thêm XAUUSD, USOIL vào cuối danh sách quét
     volumes_map = get_binance_24h_volumes()
     btc_context = get_btc_context()
     signals_to_upload = {}
