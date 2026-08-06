@@ -76,12 +76,20 @@ def send_telegram_alert(item):
                 f" | R:R sau DCA: 1:{item.get('rr_after_dca', '—')}\n"
             )
 
+        tp_block = f"🎯 TP: <code>{item['take_profit']}</code>  (R:R 1:{item['rr_ratio']})\n"
+        if item.get("tp_levels"):
+            tp_lines = "\n".join(
+                f"   {lv['level']} ({lv['volume_pct']}% KL): <code>{lv['price']}</code> — R:R 1:{lv['rr']}"
+                for lv in item["tp_levels"]
+            )
+            tp_block = f"🎯 <b>Chốt lời bậc thang:</b>\n{tp_lines}\n"
+
         text = (
             f"{emoji} <b>{item['symbol']}</b> — {item['signal']}\n"
             f"🕒 Khung giao dịch: <b>{item['trade_timeframe']}</b>\n\n"
             f"💰 Entry: <code>{item['entry']}</code>\n"
             f"🛑 SL (ATR): <code>{item['stop_loss']}</code>\n"
-            f"🎯 TP: <code>{item['take_profit']}</code>  (R:R 1:{item['rr_ratio']})\n"
+            f"{tp_block}"
             f"{dca_block}"
             f"📐 HT/KC: {item.get('support', 'N/A')} / {item.get('resistance', 'N/A')} | ATR: {item.get('atr', 'N/A')}\n"
             f"📊 RSI {item['entry_tf']}: {item['rsi_entry_tf']} | Hội tụ: {item['confluence_pct']}%\n"
