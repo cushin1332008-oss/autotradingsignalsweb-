@@ -516,7 +516,7 @@
     return `
       <div class="card ${dirClass}">
         <div class="card-head">
-          <span class="symbol">${item.symbol}</span>
+          <span class="symbol">${item.symbol}${item.asset_class === 'commodity' ? ' <span style="font-size:10px;color:var(--gold);font-weight:600;vertical-align:middle;">🥇 HÀNG HOÁ</span>' : ''}</span>
           <span class="badge ${badgeClass}">${item.signal}</span>
         </div>
         <div class="meta-row"><span class="meta-badge">${meta.icon} ${item.trade_timeframe}</span></div>
