@@ -1,5 +1,6 @@
-Flask==3.0.0
-requests==2.31.0
-pandas==2.1.4
-gunicorn==21.2.0
-python-dotenv==1.0.0
+firebase-admin
+requests
+pandas
+pandas_ta==0.4.71b0
+apscheduler
+flask
