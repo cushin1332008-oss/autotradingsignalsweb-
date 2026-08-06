@@ -53,59 +53,9 @@ ref_stats = db.reference('performance_stats')     # thống kê win rate tổng 
 session = requests.Session()
 
 # ------------------------------------------------------------------
-# 2. CẤU HÌNH TELEGRAM ALERT
+# 2. THEO DÕI TÍN HIỆU MỚI → GHI LỊCH SỬ ĐỂ ĐO WIN RATE THẬT
 # ------------------------------------------------------------------
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-
-_last_alerted = {}  # key: "SYMBOL_PROFILE" -> loại tín hiệu lần quét trước
-
-def send_telegram_alert(item):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        return
-    try:
-        emoji = "🟢" if "BUY" in item["signal"] else "🔴"
-        leverage_note = " ⚠️ (đã giới hạn trần an toàn)" if item.get("leverage_capped") else ""
-
-        dca_block = ""
-        if item.get("dca_enabled"):
-            dca_block = (
-                f"\n📥 <b>DCA:</b> Entry 1 ({item['entry_volume_pct']}% KL) @ <code>{item['entry']}</code>"
-                f" + DCA ({item['dca_volume_pct']}% KL) @ <code>{item['dca_entry']}</code>\n"
-                f"   Giá vốn TB nếu khớp: <code>{item['avg_entry_if_filled']}</code>"
-                f" | R:R sau DCA: 1:{item.get('rr_after_dca', '—')}\n"
-            )
-
-        tp_block = f"🎯 TP: <code>{item['take_profit']}</code>  (R:R 1:{item['rr_ratio']})\n"
-        if item.get("tp_levels"):
-            tp_lines = "\n".join(
-                f"   {lv['level']} ({lv['volume_pct']}% KL): <code>{lv['price']}</code> — R:R 1:{lv['rr']}"
-                for lv in item["tp_levels"]
-            )
-            tp_block = f"🎯 <b>Chốt lời bậc thang:</b>\n{tp_lines}\n"
-
-        text = (
-            f"{emoji} <b>{item['symbol']}</b> — {item['signal']}\n"
-            f"🕒 Khung giao dịch: <b>{item['trade_timeframe']}</b>\n\n"
-            f"💰 Entry: <code>{item['entry']}</code>\n"
-            f"🛑 SL (ATR): <code>{item['stop_loss']}</code>\n"
-            f"{tp_block}"
-            f"{dca_block}"
-            f"📐 HT/KC: {item.get('support', 'N/A')} / {item.get('resistance', 'N/A')} | ATR: {item.get('atr', 'N/A')}\n"
-            f"📊 RSI {item['entry_tf']}: {item['rsi_entry_tf']} | Hội tụ: {item['confluence_pct']}%\n"
-            f"💵 Volume 24h: {item.get('volume_24h_fmt', 'N/A')}\n"
-            f"⚖️ {item['confidence_level']} | Risk: {item['risk_percent']}% TK nếu dính SL\n"
-            f"🏦 Margin đề xuất: {item['margin_pct']}% TK\n"
-            f"📈 Đòn bẩy đề xuất: <b>{item['leverage']}x</b>{leverage_note}\n"
-            f"💡 {item['reason']}\n"
-            f"🕐 {item['time_str']}"
-        )
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        session.post(url, json={
-            "chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"
-        }, timeout=8)
-    except Exception as e:
-        print(f"[⚠️ TELEGRAM] Lỗi gửi thông báo cho {item.get('symbol')}: {e}")
+_last_alerted = {}  # key: "SYMBOL_PROFILE" -> loại tín hiệu lần quét trước (dùng để phát hiện tín hiệu MỚI)
 
 def record_new_trade(key, item):
     """Lưu 1 tín hiệu mới vào signal_history để theo dõi xem thực tế có chạm TP hay SL trước."""
@@ -127,22 +77,21 @@ def record_new_trade(key, item):
         print(f"[⚠️ HISTORY] Lỗi ghi lịch sử tín hiệu {key}: {e}")
 
 def notify_new_signals(signals_to_upload):
+    """Phát hiện tín hiệu MỚI hoặc ĐỔI CHIỀU so với lần quét trước, ghi vào signal_history."""
     global _last_alerted
     for key, item in signals_to_upload.items():
         prev_signal = _last_alerted.get(key)
         if prev_signal != item["signal"]:
-            send_telegram_alert(item)
-            record_new_trade(key, item)  # tín hiệu MỚI hoặc ĐỔI CHIỀU -> bắt đầu theo dõi kết quả thật
+            record_new_trade(key, item)
     _last_alerted = {key: item["signal"] for key, item in signals_to_upload.items()}
 
 # ------------------------------------------------------------------
-# 3. WATCHLIST TOP COIN THEO VỐN HÓA + LỌC THEO VOLUME 24H
+# 3. WATCHLIST TOP COIN THEO VOLUME 24H (100% dữ liệu Binance, không phụ thuộc CoinGecko)
 # ------------------------------------------------------------------
 BINANCE_KLINES_URL = "https://api.binance.com/api/v3/klines"
 BINANCE_TICKER_PRICE_URL = "https://api.binance.com/api/v3/ticker/price"
 BINANCE_EXCHANGE_INFO_URL = "https://api.binance.com/api/v3/exchangeInfo"
 BINANCE_TICKER_24H_URL = "https://api.binance.com/api/v3/ticker/24hr"
-COINGECKO_MARKETS_URL = "https://api.coingecko.com/api/v3/coins/markets"
 
 STABLECOIN_BASES = {"USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "USDD", "PYUSD"}
 MIN_VOLUME_USDT = float(os.environ.get("MIN_VOLUME_USDT", "5000000"))
@@ -202,6 +151,13 @@ def get_binance_24h_volumes():
         return _volume_cache["map"]
 
 def get_top_watchlist():
+    """
+    Xây watchlist HOÀN TOÀN từ Binance (không phụ thuộc CoinGecko) — xếp hạng theo volume
+    giao dịch 24h (quoteVolume), lấy MAX_COINS cặp thanh khoản cao nhất đạt ngưỡng tối thiểu.
+    Volume giao dịch là chỉ báo thực tế hơn vốn hóa cho việc chọn coin để SCAN TÍN HIỆU
+    (vốn hóa nói lên quy mô dự án, còn volume mới nói lên coin đó có đang được giao dịch
+    sôi động — tức có cơ hội xuất hiện setup kỹ thuật rõ ràng — hay không).
+    """
     now = time.time()
     if _watchlist_cache["list"] and now - _watchlist_cache["ts"] < WATCHLIST_TTL:
         return _watchlist_cache["list"]
@@ -209,35 +165,28 @@ def get_top_watchlist():
         binance_bases = get_binance_usdt_bases()
         volumes = get_binance_24h_volumes()
 
-        print("[⏳ STEP] Đang lấy top coin theo vốn hóa từ CoinGecko...")
-        params = {"vs_currency": "usd", "order": "market_cap_desc", "per_page": 250, "page": 1}
-        res = session.get(COINGECKO_MARKETS_URL, params=params, timeout=15)
-        coins = res.json()
-        print(f"[✅ STEP] CoinGecko trả về {len(coins) if isinstance(coins, list) else 0} coin.")
+        candidates = []
+        for pair, vol in volumes.items():
+            base = pair[:-4]  # bỏ đuôi "USDT"
+            if base in STABLECOIN_BASES or base not in binance_bases:
+                continue
+            if vol < MIN_VOLUME_USDT:
+                continue
+            candidates.append((pair, vol))
 
-        symbols = []
-        skipped = 0
-        for c in coins:
-            base = c.get("symbol", "").upper()
-            if not base or base in STABLECOIN_BASES or base not in binance_bases:
-                continue
-            pair = base + "USDT"
-            if volumes.get(pair, 0) < MIN_VOLUME_USDT:
-                skipped += 1
-                continue
-            symbols.append(pair)
-            if len(symbols) >= MAX_COINS:
-                break
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        symbols = [pair for pair, _ in candidates[:MAX_COINS]]
 
         if symbols:
             _watchlist_cache["list"] = symbols
             _watchlist_cache["ts"] = now
-            print(f"[📋 WATCHLIST] {len(symbols)} coin đạt chuẩn (loại {skipped} coin volume thấp)")
+            print(f"[📋 WATCHLIST] {len(symbols)} coin đạt chuẩn volume ≥ {MIN_VOLUME_USDT:,.0f} USDT/24h "
+                  f"(trong tổng {len(candidates)} cặp đủ điều kiện)")
             return symbols
     except Exception as e:
         print(f"[⚠️ WATCHLIST] Lỗi lấy danh sách watchlist: {e}")
 
-    print("[⚠️ WATCHLIST] Dùng danh sách dự phòng do không lấy được top coin.")
+    print("[⚠️ WATCHLIST] Dùng danh sách dự phòng do không lấy được dữ liệu Binance.")
     return _watchlist_cache["list"] or FALLBACK_WATCHLIST
 
 def format_volume(vol):
@@ -324,7 +273,6 @@ def health_check():
         "risk_percent_min": RISK_PERCENT_MIN_INFO,
         "risk_percent_max": RISK_PERCENT_MAX_INFO,
         "margin_pct_anchor": MARGIN_PCT_ANCHOR,
-        "telegram_enabled": bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID),
         "profiles": list(TRADE_PROFILES.keys()),
     }
 
@@ -333,7 +281,7 @@ def run_web_server():
     app.run(host="0.0.0.0", port=port)
 
 # ------------------------------------------------------------------
-# 7. QUÉT TOÀN BỘ WATCHLIST SONG SONG (đa luồng) → ĐẨY FIREBASE & TELEGRAM
+# 7. QUÉT TOÀN BỘ WATCHLIST SONG SONG (đa luồng) → ĐẨY FIREBASE
 # ------------------------------------------------------------------
 def get_btc_context():
     """Tính xu hướng BTC 1 lần mỗi chu kỳ quét — dùng làm bộ lọc macro cho toàn bộ altcoin."""
