@@ -44,6 +44,29 @@ DCA_LEVEL_PCT = float(os.environ.get("DCA_LEVEL_PCT", "0.5"))       # đặt DCA
 DCA_ENTRY1_VOL_PCT = float(os.environ.get("DCA_ENTRY1_VOL_PCT", "60"))  # % khối lượng cho entry đầu
 DCA_ENTRY2_VOL_PCT = 100 - DCA_ENTRY1_VOL_PCT                            # % khối lượng còn lại cho DCA
 
+def _capped_tp(price, risk_distance, rr_multiple, is_buy, resistance_wide, support_wide):
+    """Tính 1 mức TP theo bội số R:R, chặn không vượt quá vùng cản rộng phía trước."""
+    if is_buy:
+        raw_tp = price + risk_distance * rr_multiple
+        cap = resistance_wide * 0.9985
+        return min(raw_tp, cap) if cap > price else raw_tp
+    else:
+        raw_tp = price - risk_distance * rr_multiple
+        cap = support_wide * 1.0015
+        return max(raw_tp, cap) if cap < price else raw_tp
+
+# ------------------------------------------------------------------
+# CHỐT LỜI BẬC THANG (TP1/TP2/TP3) — thay vì 1 điểm TP duy nhất, chia khối lượng ra 3 mức
+# để khoá lời từng phần, giảm rủi ro "được ăn cả ngã về không" khi giá đảo chiều sau khi
+# đã đi đúng hướng một đoạn. Mức TP2 = mục tiêu chính (giữ nguyên logic R:R linh hoạt cũ).
+# ------------------------------------------------------------------
+TP_LEVELS_ENABLED = os.environ.get("TP_LEVELS_ENABLED", "true").lower() == "true"
+TP1_RR_FACTOR = float(os.environ.get("TP1_RR_FACTOR", "0.5"))   # TP1 = 50% quãng đường tới mục tiêu chính
+TP3_RR_FACTOR = float(os.environ.get("TP3_RR_FACTOR", "1.5"))   # TP3 = 150% mục tiêu chính (nếu cấu trúc cho phép)
+TP1_VOL_PCT = float(os.environ.get("TP1_VOL_PCT", "50"))
+TP2_VOL_PCT = float(os.environ.get("TP2_VOL_PCT", "30"))
+TP3_VOL_PCT = float(os.environ.get("TP3_VOL_PCT", "20"))
+
 def dynamic_rr_ratio(confluence_pct):
     """
     Nội suy tuyến tính R:R theo độ hội tụ đa khung (confluence_pct):
@@ -306,17 +329,13 @@ def generate_signal_for_profile(tf_results, profile_key, btc_context=None):
     rr_target = dynamic_rr_ratio(confluence_pct)
     risk_distance = abs(price - sl)
 
-    if "BUY" in signal_type:
-        tp = price + risk_distance * rr_target
-        # Chặn TP không vượt quá vùng kháng cự RỘNG phía trước (trừ hao 0.15% làm buffer an toàn)
-        resistance_cap = entry["resistance_wide"] * 0.9985
-        if resistance_cap > price:  # chỉ chặn nếu vùng cản đó thực sự còn ở phía trước, chưa bị vượt qua
-            tp = min(tp, resistance_cap)
-    else:
-        tp = price - risk_distance * rr_target
-        support_cap = entry["support_wide"] * 1.0015
-        if support_cap < price:
-            tp = max(tp, support_cap)
+    is_buy = "BUY" in signal_type
+    resistance_wide = entry["resistance_wide"]
+    support_wide = entry["support_wide"]
+
+    # TP2 là mục tiêu CHÍNH (giữ nguyên logic R:R linh hoạt cũ) — vẫn là "take_profit" chuẩn
+    # dùng cho backtest.py để không phá vỡ tương thích ngược.
+    tp = _capped_tp(price, risk_distance, rr_target, is_buy, resistance_wide, support_wide)
 
     # R:R THỰC TẾ sau khi đã chặn theo cấu trúc giá — có thể thấp hoặc cao hơn rr_target ban đầu
     actual_rr = round(abs(tp - price) / risk_distance, 2) if risk_distance > 0 else rr_target
@@ -325,6 +344,21 @@ def generate_signal_for_profile(tf_results, profile_key, btc_context=None):
     # kèo này coi như không đủ hấp dẫn để giao dịch — bỏ qua thay vì trả về 1 tín hiệu tệ.
     if actual_rr < MIN_ACCEPTABLE_RR:
         return None
+
+    # TP1 (gần hơn, chốt non 1 phần) và TP3 (xa hơn, để chạy thêm nếu cấu trúc còn cho phép)
+    tp_levels = None
+    if TP_LEVELS_ENABLED:
+        tp1 = _capped_tp(price, risk_distance, rr_target * TP1_RR_FACTOR, is_buy, resistance_wide, support_wide)
+        tp3 = _capped_tp(price, risk_distance, rr_target * TP3_RR_FACTOR, is_buy, resistance_wide, support_wide)
+
+        def _rr_of(level_price):
+            return round(abs(level_price - price) / risk_distance, 2) if risk_distance > 0 else None
+
+        tp_levels = [
+            {"level": "TP1", "price": round(float(tp1), 6), "volume_pct": TP1_VOL_PCT, "rr": _rr_of(tp1)},
+            {"level": "TP2", "price": round(float(tp), 6), "volume_pct": TP2_VOL_PCT, "rr": actual_rr},
+            {"level": "TP3", "price": round(float(tp3), 6), "volume_pct": TP3_VOL_PCT, "rr": _rr_of(tp3)},
+        ]
 
     # ------------------------------------------------------------------
     # DCA: đặt 1 lệnh vào thêm ở giữa quãng đường entry -> SL. SL/TP GIỮ NGUYÊN (mức cấu trúc),
@@ -362,6 +396,7 @@ def generate_signal_for_profile(tf_results, profile_key, btc_context=None):
         "stop_loss": round(float(sl), 6),
         "take_profit": round(float(tp), 6),
         "rr_ratio": actual_rr,
+        "tp_levels": tp_levels,
         **dca_fields,
         "atr": round(float(atr), 6),
         "reason": " + ".join(reasons),
