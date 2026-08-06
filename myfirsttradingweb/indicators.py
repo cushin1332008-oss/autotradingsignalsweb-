@@ -81,11 +81,11 @@ def dynamic_rr_ratio(confluence_pct):
 # ------------------------------------------------------------------
 # NGƯỠNG LỌC TÍN HIỆU — tăng độ chặt để giảm SL bị dính oan do bắt tín hiệu ở vùng giằng co
 # ------------------------------------------------------------------
-RSI_OVERSOLD = float(os.environ.get("RSI_OVERSOLD", "40"))    # trước: 45 — giờ khắt khe hơn
-RSI_OVERBOUGHT = float(os.environ.get("RSI_OVERBOUGHT", "60"))  # trước: 55 — giờ khắt khe hơn
+RSI_OVERSOLD = float(os.environ.get("RSI_OVERSOLD", "42"))    # nới nhẹ từ 40 -> 42 để ra tín hiệu đều hơn
+RSI_OVERBOUGHT = float(os.environ.get("RSI_OVERBOUGHT", "58"))  # nới nhẹ từ 60 -> 58
 SL_ATR_MULTIPLIER = float(os.environ.get("SL_ATR_MULTIPLIER", "1.4"))       # trước: 1.0 — nới SL xa hơn
 SL_ATR_FALLBACK_MULTIPLIER = float(os.environ.get("SL_ATR_FALLBACK_MULTIPLIER", "1.8"))  # trước: 1.5
-TREND_STRENGTH_ATR_MULT = float(os.environ.get("TREND_STRENGTH_ATR_MULT", "0.3"))  # mới: lọc trend yếu/giằng co
+TREND_STRENGTH_ATR_MULT = float(os.environ.get("TREND_STRENGTH_ATR_MULT", "0.2"))  # nới từ 0.3 -> 0.2
 
 # ------------------------------------------------------------------
 # 3 PROFILE GIAO DỊCH
@@ -152,7 +152,7 @@ def nearest_fib_level(price, fib_levels, tolerance_pct=0.5):
 # ------------------------------------------------------------------
 # NHẬN DIỆN NẾN ĐẢO CHIỀU (xác nhận thêm cho tín hiệu, không chỉ dựa vào RSI+vị trí giá)
 # ------------------------------------------------------------------
-REQUIRE_CANDLE_CONFIRMATION = os.environ.get("REQUIRE_CANDLE_CONFIRMATION", "true").lower() == "true"
+REQUIRE_CANDLE_CONFIRMATION = os.environ.get("REQUIRE_CANDLE_CONFIRMATION", "false").lower() == "true"
 
 def detect_reversal_candle(df):
     """
@@ -442,12 +442,18 @@ def dynamic_risk_percent(confluence_pct):
 # Khung đòn bẩy riêng theo từng khung giao dịch (timeframe) — khung nhỏ (M15) có SL
 # co giãn theo ATR hẹp hơn nên tự nhiên cần đòn bẩy cao hơn mới đạt đúng risk_percent;
 # khung lớn (H4) có SL rộng hơn nên cần đòn bẩy thấp hơn dù risk% giữ nguyên.
-# Chỉnh trực tiếp các số này nếu muốn khung khác (VD: BingX giới hạn theo từng cặp coin,
-# tự sàn sẽ cắt xuống mức cho phép nếu bot đề xuất vượt mức, không lỗi gì cả).
+# CRYPTO: trần theo đúng mức BingX Perpetual Futures thực tế cho phép (~150-200x).
 LEVERAGE_RANGE_BY_PROFILE = {
     "SCALP":    (50, 200),   # M15 — biến động ngắn hạn, SL hẹp
     "SWING":    (30, 125),   # H1
     "POSITION": (20, 75),    # H4 — biến động rộng hơn, SL xa hơn
+}
+# HÀNG HOÁ (Vàng/Dầu qua BingX "Standard Futures"/Forex Perpetual): sàn cho phép trần cao
+# hơn crypto (tới 500x theo công bố của BingX), nhưng vẫn kẹp theo từng khung như trên.
+COMMODITY_LEVERAGE_RANGE_BY_PROFILE = {
+    "SCALP":    (50, 500),
+    "SWING":    (30, 300),
+    "POSITION": (20, 150),
 }
 DEFAULT_LEVERAGE_RANGE = (20, 100)
 
@@ -459,7 +465,10 @@ ACCOUNT_BALANCE_USDT = float(os.environ.get("ACCOUNT_BALANCE_USDT", "0"))
 # để giá trị an toàn hơn (5) làm mặc định, bạn có thể chỉnh theo cặp mình hay đánh.
 MIN_NOTIONAL_USDT = float(os.environ.get("MIN_NOTIONAL_USDT", "5.0"))
 
-LEVERAGE_STEPS = [1, 2, 3, 5, 10, 15, 20, 25, 30, 50, 75, 100, 125, 150, 200]  # mức đòn bẩy phổ biến trên sàn
+# Lưu ý: KHÔNG có mức đòn bẩy 1000x trên bất kỳ sàn lớn nào (kể cả BingX) tại thời điểm
+# viết code này — trần thực tế cao nhất là 500x (BingX Standard Futures/Forex/hàng hoá).
+# Nếu để lộ giá trị vượt xa thực tế sàn hỗ trợ, bot sẽ đưa ra con số không dùng được thật.
+LEVERAGE_STEPS = [1, 2, 3, 5, 10, 15, 20, 25, 30, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500]
 
 def classify_confidence(confluence_pct):
     """Chỉ dùng để HIỂN THỊ độ tin cậy tín hiệu — KHÔNG còn dùng để tự giảm risk%."""
@@ -477,7 +486,8 @@ def snap_leverage(raw_leverage):
     return LEVERAGE_STEPS[-1]
 
 def calc_position_sizing(entry, stop_loss, confluence_pct, profile_key,
-                          risk_percent=None, margin_pct_anchor=None, account_balance=None):
+                          risk_percent=None, margin_pct_anchor=None, account_balance=None,
+                          asset_class="crypto"):
     """
     Trả về dict:
     - confidence_level: nhãn độ tin cậy tín hiệu
@@ -503,7 +513,8 @@ def calc_position_sizing(entry, stop_loss, confluence_pct, profile_key,
     margin_anchor = margin_pct_anchor if margin_pct_anchor is not None else MARGIN_PCT_TARGET_DEFAULT
     account_balance = account_balance if account_balance is not None else ACCOUNT_BALANCE_USDT
     confidence_label = classify_confidence(confluence_pct)
-    min_lev, max_lev = LEVERAGE_RANGE_BY_PROFILE.get(profile_key, DEFAULT_LEVERAGE_RANGE)
+    leverage_table = COMMODITY_LEVERAGE_RANGE_BY_PROFILE if asset_class == "commodity" else LEVERAGE_RANGE_BY_PROFILE
+    min_lev, max_lev = leverage_table.get(profile_key, DEFAULT_LEVERAGE_RANGE)
 
     sl_distance_pct = abs(entry - stop_loss) / entry * 100
     if sl_distance_pct <= 0:
