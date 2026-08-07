@@ -473,33 +473,85 @@
     return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   }
 
-  async function subscribeToPush() {
-    try {
-      const registration = await navigator.serviceWorker.register('/sw.js');
-      const permission = await Notification.requestPermission();
+  function withTimeout(promise, ms, timeoutMessage) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(timeoutMessage)), ms)),
+    ]);
+  }
 
+  async function subscribeToPush() {
+    const btn = notifEnableBtn;
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    notifDismissBtn.disabled = true;
+    btn.textContent = 'Đang xử lý…';
+    showNotifStatus('Đang đăng ký thiết bị…');
+
+    try {
+      if (!('serviceWorker' in navigator)) {
+        throw new Error('Trình duyệt này không hỗ trợ Service Worker.');
+      }
+
+      let registration;
+      try {
+        registration = await withTimeout(
+          navigator.serviceWorker.register('/sw.js'),
+          10000,
+          'Đăng ký Service Worker quá lâu — kiểm tra sw.js đã được deploy đúng vị trí gốc site chưa.'
+        );
+        await withTimeout(navigator.serviceWorker.ready, 10000, 'Service Worker không kích hoạt được.');
+      } catch (e) {
+        throw new Error('Không tìm thấy hoặc không đăng ký được sw.js. Kiểm tra file sw.js đã nằm ở thư mục gốc site (cùng cấp index.html) và deploy xong chưa. Chi tiết: ' + e.message);
+      }
+
+      const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
         showNotifStatus('Bạn đã từ chối quyền thông báo — có thể bật lại trong cài đặt trình duyệt.');
+        notifBanner.classList.remove('show');
         return;
       }
 
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-      });
+      let subscription;
+      try {
+        subscription = await withTimeout(
+          registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+          }),
+          10000,
+          'Đăng ký push subscription quá lâu.'
+        );
+      } catch (e) {
+        throw new Error('Không tạo được push subscription (kiểm tra lại VAPID_PUBLIC_KEY). Chi tiết: ' + e.message);
+      }
 
       // Dùng endpoint làm khoá (thay ký tự đặc biệt) để 1 thiết bị chỉ lưu 1 lần, tránh trùng lặp
       const subId = btoa(subscription.endpoint).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100);
-      await pushSubsRef.child(subId).set(subscription.toJSON());
-      localStorage.setItem('cushin_sub_id', subId);
+      try {
+        await withTimeout(
+          pushSubsRef.child(subId).set(subscription.toJSON()),
+          10000,
+          'Ghi vào Firebase quá lâu.'
+        );
+      } catch (e) {
+        throw new Error('Không ghi được subscription vào Firebase — kiểm tra Firebase Rules đã cho phép ghi node "push_subscriptions" chưa. Chi tiết: ' + e.message);
+      }
 
+      localStorage.setItem('cushin_sub_id', subId);
       localStorage.setItem('cushin_push_enabled', '1');
       notifBanner.classList.remove('show');
-      showNotifStatus('Đã bật thông báo — bạn sẽ nhận được tín hiệu mới ngay cả khi đóng trang.');
+      showNotifStatus('✅ Đã bật thông báo — bạn sẽ nhận được tín hiệu mới ngay cả khi đóng trang.');
       document.getElementById('notifTestBtn').style.display = 'inline-block';
     } catch (err) {
       console.error('Lỗi đăng ký push:', err);
-      showNotifStatus('Không thể bật thông báo trên thiết bị/trình duyệt này.');
+      // KHÔNG ẩn banner khi lỗi -> để bạn thấy rõ trạng thái và có thể bấm thử lại ngay,
+      // thay vì banner "biến mất" hoặc "đứng im" không rõ đang chờ hay đã hỏng.
+      showNotifStatus('❌ ' + (err.message || 'Không thể bật thông báo trên thiết bị/trình duyệt này.'));
+    } finally {
+      btn.disabled = false;
+      notifDismissBtn.disabled = false;
+      btn.textContent = originalText;
     }
   }
 
