@@ -311,23 +311,28 @@ def format_volume(vol):
 # ------------------------------------------------------------------
 # 4. LẤY DỮ LIỆU NẾN TỪ BINANCE
 # ------------------------------------------------------------------
-def get_klines(symbol: str, interval: str, limit: int = 210):
-    try:
-        params = {"symbol": symbol, "interval": interval, "limit": limit}
-        res = session.get(BINANCE_KLINES_URL, params=params, timeout=8)
-        raw = res.json()
-        if not isinstance(raw, list) or len(raw) < 60:
-            return None
-        df = pd.DataFrame(raw, columns=[
-            "open_time", "open", "high", "low", "close", "volume",
-            "close_time", "quote_asset_volume", "number_of_trades",
-            "taker_buy_base_asset_volume", "taker_buy_quote_asset_volume", "ignore"
-        ])
-        for col in ["open", "high", "low", "close", "volume"]:
-            df[col] = df[col].astype(float)
-        return df
-    except Exception:
-        return None
+def get_klines(symbol: str, interval: str, limit: int = 210, retries: int = 1):
+    """Lấy nến từ Binance, tự thử lại 1 lần nếu lỗi mạng thoáng qua — tránh 1 coin bị mất
+    dữ liệu 1 khung do trục trặc tạm thời, âm thầm làm mất 1 tín hiệu đáng lẽ hợp lệ."""
+    for attempt in range(retries + 1):
+        try:
+            params = {"symbol": symbol, "interval": interval, "limit": limit}
+            res = session.get(BINANCE_KLINES_URL, params=params, timeout=8)
+            raw = res.json()
+            if isinstance(raw, list) and len(raw) >= 60:
+                df = pd.DataFrame(raw, columns=[
+                    "open_time", "open", "high", "low", "close", "volume",
+                    "close_time", "quote_asset_volume", "number_of_trades",
+                    "taker_buy_base_asset_volume", "taker_buy_quote_asset_volume", "ignore"
+                ])
+                for col in ["open", "high", "low", "close", "volume"]:
+                    df[col] = df[col].astype(float)
+                return df
+        except Exception:
+            pass
+        if attempt < retries:
+            time.sleep(0.3)
+    return None
 
 # ------------------------------------------------------------------
 # 4b. VÀNG (XAUUSD) & DẦU (USOIL) — dữ liệu từ Yahoo Finance (API công khai, KHÔNG CẦN key)
@@ -353,7 +358,16 @@ YAHOO_INTERVAL_MAP = {
     "1d":  ("1d", "2y"),
 }
 
-def get_yahoo_klines(yahoo_symbol, our_interval, limit=210):
+def get_yahoo_klines(yahoo_symbol, our_interval, limit=210, retries=1):
+    for attempt in range(retries + 1):
+        result_df = _fetch_yahoo_klines_once(yahoo_symbol, our_interval, limit)
+        if result_df is not None:
+            return result_df
+        if attempt < retries:
+            time.sleep(0.5)
+    return None
+
+def _fetch_yahoo_klines_once(yahoo_symbol, our_interval, limit):
     try:
         yahoo_interval, yahoo_range = YAHOO_INTERVAL_MAP[our_interval]
         url = YAHOO_CHART_URL.format(symbol=yahoo_symbol)
