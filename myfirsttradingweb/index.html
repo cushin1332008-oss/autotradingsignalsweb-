@@ -189,6 +189,43 @@
   .disclaimer b { color: var(--text-dim); }
 
   /* ============================================================
+     BANNER XIN QUYỀN THÔNG BÁO
+     ============================================================ */
+  .notif-banner {
+    display: none;
+    align-items: center; gap: 14px; flex-wrap: wrap;
+    margin: 18px 0; padding: 14px 18px;
+    background: linear-gradient(135deg, var(--gold-soft), var(--panel));
+    border: 1px solid var(--gold-line); border-radius: var(--radius);
+  }
+  .notif-banner.show { display: flex; }
+  .notif-banner .icon-wrap {
+    width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0;
+    background: var(--gold-soft); border: 1px solid var(--gold-line);
+    display: flex; align-items: center; justify-content: center; font-size: 17px;
+  }
+  .notif-banner .text { flex: 1; min-width: 200px; }
+  .notif-banner .text .t1 { font-family: var(--font-display); font-size: 13.5px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+  .notif-banner .text .t2 { font-size: 11.5px; color: var(--text-faint); line-height: 1.5; }
+  .notif-banner .actions { display: flex; gap: 8px; flex-shrink: 0; }
+  .notif-btn {
+    font-family: var(--font-body); font-size: 12.5px; font-weight: 600;
+    padding: 8px 15px; border-radius: 8px; cursor: pointer; border: 1px solid transparent;
+    transition: opacity .15s ease, transform .1s ease;
+  }
+  .notif-btn:active { transform: scale(0.97); }
+  .notif-btn--primary { background: var(--gold); color: #1A1400; }
+  .notif-btn--primary:hover { opacity: 0.9; }
+  .notif-btn--ghost { background: transparent; color: var(--text-faint); border-color: var(--border-strong); }
+  .notif-btn--ghost:hover { color: var(--text-dim); }
+  .notif-status {
+    display: none; align-items: center; gap: 7px; font-size: 11.5px; color: var(--text-faint);
+    margin: 10px 0 -4px; font-family: var(--font-mono);
+  }
+  .notif-status.show { display: flex; }
+  .notif-status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--buy); }
+
+  /* ============================================================
      CARD GRID
      ============================================================ */
   main { padding-bottom: 70px; }
@@ -343,6 +380,19 @@
       <b>Lưu ý:</b> tín hiệu, mức dừng lỗ co giãn theo ATR, kế hoạch DCA và đòn bẩy đề xuất do thuật toán tính toán tự động, không phải lời khuyên đầu tư. Tự chịu trách nhiệm với quyết định giao dịch của bạn.
     </div>
 
+    <div class="notif-banner" id="notifBanner">
+      <div class="icon-wrap">🔔</div>
+      <div class="text">
+        <div class="t1">Bật thông báo khi có tín hiệu mới?</div>
+        <div class="t2">Nhận thông báo ngay cả khi đã đóng tab hoặc trình duyệt. Trên iPhone, cần "Thêm vào Màn hình chính" trước mới nhận được.</div>
+      </div>
+      <div class="actions">
+        <button class="notif-btn notif-btn--ghost" id="notifDismiss">Để sau</button>
+        <button class="notif-btn notif-btn--primary" id="notifEnable">Bật thông báo</button>
+      </div>
+    </div>
+    <div class="notif-status" id="notifStatus"><span class="dot"></span><span id="notifStatusText"></span></div>
+
     <main>
       <div class="grid" id="signalsGrid">
         <div class="empty">
@@ -373,6 +423,91 @@
 
   let currentData = null;
   let activeProfile = 'ALL';
+
+  // ==================================================================
+  // WEB PUSH NOTIFICATION — nổ thông báo kể cả khi đã đóng tab/trình duyệt.
+  // Subscription được ghi TRỰC TIẾP vào Firebase (không gọi qua backend Render)
+  // để tránh vướng CORS giữa 2 domain khác nhau — backend chỉ cần ĐỌC node này.
+  // ==================================================================
+  const VAPID_PUBLIC_KEY = "BGAy4yL-1hRdMPHTlSYKJaoEMG_oY5hSZo9GNN2XNnNkHGo_1Cr_t5SQvFvkhN-ezBHPVVkSseT-fbqw3fiFjfM";
+  const pushSubsRef = firebase.database().ref('push_subscriptions');
+
+  const notifBanner = document.getElementById('notifBanner');
+  const notifEnableBtn = document.getElementById('notifEnable');
+  const notifDismissBtn = document.getElementById('notifDismiss');
+  const notifStatus = document.getElementById('notifStatus');
+  const notifStatusText = document.getElementById('notifStatusText');
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; i++) outputArray[i] = rawData.charCodeAt(i);
+    return outputArray;
+  }
+
+  function showNotifStatus(text) {
+    notifStatus.classList.add('show');
+    notifStatusText.textContent = text;
+  }
+
+  function pushSupported() {
+    return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  }
+
+  async function subscribeToPush() {
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      const permission = await Notification.requestPermission();
+
+      if (permission !== 'granted') {
+        showNotifStatus('Bạn đã từ chối quyền thông báo — có thể bật lại trong cài đặt trình duyệt.');
+        return;
+      }
+
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+
+      // Dùng endpoint làm khoá (thay ký tự đặc biệt) để 1 thiết bị chỉ lưu 1 lần, tránh trùng lặp
+      const subId = btoa(subscription.endpoint).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100);
+      await pushSubsRef.child(subId).set(subscription.toJSON());
+
+      localStorage.setItem('cushin_push_enabled', '1');
+      notifBanner.classList.remove('show');
+      showNotifStatus('Đã bật thông báo — bạn sẽ nhận được tín hiệu mới ngay cả khi đóng trang.');
+    } catch (err) {
+      console.error('Lỗi đăng ký push:', err);
+      showNotifStatus('Không thể bật thông báo trên thiết bị/trình duyệt này.');
+    }
+  }
+
+  function initNotifBanner() {
+    if (!pushSupported()) return; // trình duyệt không hỗ trợ (VD Safari iOS chưa cài PWA) -> im lặng, không làm phiền
+
+    if (Notification.permission === 'granted' && localStorage.getItem('cushin_push_enabled') === '1') {
+      return; // đã bật rồi, không cần hỏi lại
+    }
+    if (Notification.permission === 'denied') {
+      return; // đã từ chối trước đó, tôn trọng lựa chọn, không hỏi lại
+    }
+
+    const dismissedAt = parseInt(localStorage.getItem('cushin_notif_dismissed_at') || '0', 10);
+    const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
+    if (Date.now() - dismissedAt < THREE_DAYS) return; // vừa bấm "Để sau" gần đây -> chưa hỏi lại vội
+
+    notifBanner.classList.add('show');
+  }
+
+  notifEnableBtn?.addEventListener('click', subscribeToPush);
+  notifDismissBtn?.addEventListener('click', () => {
+    notifBanner.classList.remove('show');
+    localStorage.setItem('cushin_notif_dismissed_at', String(Date.now()));
+  });
+
+  initNotifBanner();
 
   const PROFILE_META = {
     SCALP:    { icon: '⚡', tag: 'Lướt sóng · M15' },
