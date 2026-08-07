@@ -4,3 +4,5 @@ pandas
 pandas_ta==0.4.71b0
 apscheduler
 flask
+pywebpush
+py-vapid
