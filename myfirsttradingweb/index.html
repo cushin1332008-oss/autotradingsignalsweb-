@@ -225,6 +225,16 @@
   .notif-status.show { display: flex; }
   .notif-status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--buy); }
 
+  .health-banner {
+    display: none;
+    align-items: center; gap: 9px;
+    margin: 14px 0; padding: 11px 15px;
+    background: var(--sell-soft); border: 1px solid var(--sell-line);
+    border-radius: var(--radius-sm);
+    font-size: 12.5px; color: var(--sell);
+  }
+  .health-banner.show { display: flex; }
+
   /* ============================================================
      CARD GRID
      ============================================================ */
@@ -391,7 +401,14 @@
         <button class="notif-btn notif-btn--primary" id="notifEnable">Bật thông báo</button>
       </div>
     </div>
-    <div class="notif-status" id="notifStatus"><span class="dot"></span><span id="notifStatusText"></span></div>
+    <div class="notif-status" id="notifStatus">
+      <span class="dot"></span><span id="notifStatusText"></span>
+      <button class="notif-btn notif-btn--ghost" id="notifTestBtn" style="display:none;padding:5px 11px;font-size:11px;">Gửi thử</button>
+    </div>
+
+    <div class="health-banner" id="healthBanner">
+      <span>⚠️</span><span id="healthBannerText"></span>
+    </div>
 
     <main>
       <div class="grid" id="signalsGrid">
@@ -474,20 +491,50 @@
       // Dùng endpoint làm khoá (thay ký tự đặc biệt) để 1 thiết bị chỉ lưu 1 lần, tránh trùng lặp
       const subId = btoa(subscription.endpoint).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100);
       await pushSubsRef.child(subId).set(subscription.toJSON());
+      localStorage.setItem('cushin_sub_id', subId);
 
       localStorage.setItem('cushin_push_enabled', '1');
       notifBanner.classList.remove('show');
       showNotifStatus('Đã bật thông báo — bạn sẽ nhận được tín hiệu mới ngay cả khi đóng trang.');
+      document.getElementById('notifTestBtn').style.display = 'inline-block';
     } catch (err) {
       console.error('Lỗi đăng ký push:', err);
       showNotifStatus('Không thể bật thông báo trên thiết bị/trình duyệt này.');
     }
   }
 
+  const RENDER_BACKEND_URL = "https://autotradingsignalsweb.onrender.com";
+
+  async function sendTestPush() {
+    const subId = localStorage.getItem('cushin_sub_id');
+    if (!subId) return;
+    const btn = document.getElementById('notifTestBtn');
+    btn.disabled = true;
+    btn.textContent = 'Đang gửi…';
+    try {
+      const res = await fetch(`${RENDER_BACKEND_URL}/test-push`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sub_id: subId }),
+      });
+      const data = await res.json();
+      showNotifStatus(data.ok ? 'Đã gửi thông báo thử — kiểm tra máy bạn nhé!' : `Lỗi: ${data.error || 'không rõ nguyên nhân'}`);
+    } catch (err) {
+      showNotifStatus('Không gọi được server (backend có thể đang khởi động lại, thử lại sau ít giây).');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Gửi thử';
+    }
+  }
+  document.getElementById('notifTestBtn')?.addEventListener('click', sendTestPush);
+
   function initNotifBanner() {
     if (!pushSupported()) return; // trình duyệt không hỗ trợ (VD Safari iOS chưa cài PWA) -> im lặng, không làm phiền
 
     if (Notification.permission === 'granted' && localStorage.getItem('cushin_push_enabled') === '1') {
+      if (localStorage.getItem('cushin_sub_id')) {
+        document.getElementById('notifTestBtn').style.display = 'inline-block';
+      }
       return; // đã bật rồi, không cần hỏi lại
     }
     if (Notification.permission === 'denied') {
@@ -508,6 +555,41 @@
   });
 
   initNotifBanner();
+
+  // Lắng nghe trạng thái hệ thống (watchlist có bất thường không) để cảnh báo minh bạch
+  firebase.database().ref('system_status').on('value', (snapshot) => {
+    const status = snapshot.val();
+    const banner = document.getElementById('healthBanner');
+    if (!status) return;
+    if (status.watchlist_health === 'degraded') {
+      banner.classList.add('show');
+      document.getElementById('healthBannerText').textContent =
+        `Watchlist đang bất thường thấp (${status.watchlist_size} coin) — có thể Binance API đang gặp sự cố tạm thời. Cập nhật lúc ${status.checked_at}.`;
+    } else {
+      banner.classList.remove('show');
+    }
+  });
+
+  // Đọc URL query (?profile=...&symbol=...) khi bấm vào từ push notification -> tự nhảy đúng tab
+  function applyDeepLinkFromURL() {
+    const params = new URLSearchParams(window.location.search);
+    const profile = params.get('profile');
+    const symbol = params.get('symbol');
+    if (profile && ['SCALP', 'SWING', 'POSITION'].includes(profile)) {
+      activeProfile = profile;
+      tabButtons.forEach(b => b.classList.toggle('active', b.dataset.profile === profile));
+    }
+    if (symbol) {
+      setTimeout(() => {
+        const target = document.querySelector(`[data-symbol="${symbol}"]`);
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          target.style.outline = '2px solid var(--gold)';
+          setTimeout(() => { target.style.outline = 'none'; }, 3000);
+        }
+      }, 500);
+    }
+  }
 
   const PROFILE_META = {
     SCALP:    { icon: '⚡', tag: 'Lướt sóng · M15' },
@@ -530,12 +612,17 @@
     });
   });
 
+  let _deepLinkApplied = false;
   dbRef.on('value', (snapshot) => {
     statusDot.className = 'status-dot live';
     statusText.textContent = 'Trực tuyến — Realtime';
     currentData = snapshot.val();
     render(currentData);
     updateTicker(currentData);
+    if (!_deepLinkApplied) {
+      _deepLinkApplied = true;
+      applyDeepLinkFromURL();
+    }
   }, (error) => {
     statusDot.className = 'status-dot err';
     statusText.textContent = 'Lỗi kết nối';
@@ -649,7 +736,7 @@
     const leverageWarn = item.leverage_capped ? '<span class="risk-warn">⚠ vượt trần khung</span>' : '';
 
     return `
-      <div class="card ${dirClass}">
+      <div class="card ${dirClass}" data-symbol="${item.symbol}">
         <div class="card-head">
           <span class="symbol">${item.symbol}${item.asset_class === 'commodity' ? ' <span style="font-size:10px;color:var(--gold);font-weight:600;vertical-align:middle;">🥇 HÀNG HOÁ</span>' : ''}</span>
           <span class="badge ${badgeClass}">${item.signal}</span>
