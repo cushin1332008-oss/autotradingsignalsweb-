@@ -11,6 +11,10 @@ from flask import Flask
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pywebpush import webpush, WebPushException
+from py_vapid import Vapid02
+from pywebpush import webpush, WebPushException
+from py_vapid import Vapid02
 
 from indicators import (
     TIMEFRAMES, TRADE_PROFILES, analyze_timeframe, generate_all_signals, calc_position_sizing
@@ -50,6 +54,7 @@ firebase_admin.initialize_app(cred, {
 ref = db.reference('signals')
 ref_history = db.reference('signal_history')     # lưu từng tín hiệu đã bắn ra để theo dõi kết quả thật
 ref_stats = db.reference('performance_stats')     # thống kê win rate tổng hợp, cập nhật mỗi chu kỳ quét
+ref_subscriptions = db.reference('push_subscriptions')  # danh sách trình duyệt đã đăng ký nhận Web Push
 session = requests.Session()
 
 # ------------------------------------------------------------------
@@ -77,13 +82,90 @@ def record_new_trade(key, item):
         print(f"[⚠️ HISTORY] Lỗi ghi lịch sử tín hiệu {key}: {e}")
 
 def notify_new_signals(signals_to_upload):
-    """Phát hiện tín hiệu MỚI hoặc ĐỔI CHIỀU so với lần quét trước, ghi vào signal_history."""
+    """Phát hiện tín hiệu MỚI hoặc ĐỔI CHIỀU so với lần quét trước, ghi lịch sử + gửi push."""
     global _last_alerted
     for key, item in signals_to_upload.items():
         prev_signal = _last_alerted.get(key)
         if prev_signal != item["signal"]:
             record_new_trade(key, item)
+            send_push_to_all_subscribers(item)
     _last_alerted = {key: item["signal"] for key, item in signals_to_upload.items()}
+
+# ------------------------------------------------------------------
+# 2b. WEB PUSH — nổ thông báo trên trình duyệt NGAY CẢ KHI ĐÃ ĐÓNG TAB/TRÌNH DUYỆT
+# ------------------------------------------------------------------
+# LƯU Ý GIỚI HẠN NỀN TẢNG (không phải lỗi code, là giới hạn của trình duyệt):
+# - Chrome/Edge/Firefox (Android & Desktop): hoạt động đầy đủ, kể cả khi đã đóng trình duyệt.
+# - Safari trên iPhone/iPad: CHỈ hoạt động nếu người dùng "Thêm vào Màn hình chính" (cài như
+#   app/PWA) trước — Apple không cho phép web push trên tab Safari thông thường (từ iOS 16.4+
+#   trở lên mới hỗ trợ, và bắt buộc phải cài vào Home Screen).
+VAPID_PRIVATE_KEY_PEM = os.environ.get("VAPID_PRIVATE_KEY", "").replace("\\n", "\n")
+VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "")
+VAPID_CLAIMS_EMAIL = os.environ.get("VAPID_CLAIMS_EMAIL", "admin@example.com")
+SITE_URL = os.environ.get("SITE_URL", "https://cushintradingautosignals.vercel.app")
+
+_vapid_instance = None
+
+def get_vapid():
+    global _vapid_instance
+    if _vapid_instance is None and VAPID_PRIVATE_KEY_PEM:
+        try:
+            _vapid_instance = Vapid02.from_pem(VAPID_PRIVATE_KEY_PEM.encode())
+        except Exception as e:
+            print(f"[⚠️ PUSH] Lỗi nạp VAPID private key: {e}")
+    return _vapid_instance
+
+def send_push_to_all_subscribers(item):
+    """Gửi Web Push cho TẤT CẢ trình duyệt đã đăng ký, mỗi khi có tín hiệu mới/đổi chiều."""
+    vapid = get_vapid()
+    if not vapid:
+        return  # chưa cấu hình VAPID_PRIVATE_KEY trên Render -> bỏ qua, không lỗi gì
+
+    try:
+        subs = ref_subscriptions.get() or {}
+    except Exception as e:
+        print(f"[⚠️ PUSH] Lỗi đọc danh sách subscription: {e}")
+        return
+
+    if not subs:
+        return
+
+    is_buy = "BUY" in item["signal"]
+    tp1 = item["tp_levels"][0]["price"] if item.get("tp_levels") else item["take_profit"]
+    payload = json.dumps({
+        "title": f"{'🟢' if is_buy else '🔴'} {item['symbol']} — {item['signal']}",
+        "body": f"{item['trade_timeframe']} · Entry {item['entry']} · SL {item['stop_loss']} · TP1 {tp1}",
+        "url": SITE_URL,
+    })
+
+    sent, expired = 0, []
+    for sub_id, sub_info in subs.items():
+        try:
+            webpush(
+                subscription_info=sub_info,
+                data=payload,
+                vapid_private_key=vapid,
+                vapid_claims={"sub": f"mailto:{VAPID_CLAIMS_EMAIL}"},
+            )
+            sent += 1
+        except WebPushException as e:
+            status = getattr(e.response, "status_code", None)
+            if status in (404, 410):  # subscription hết hạn / người dùng đã tắt thông báo
+                expired.append(sub_id)
+            else:
+                print(f"[⚠️ PUSH] Lỗi gửi tới {sub_id}: {e}")
+        except Exception as e:
+            print(f"[⚠️ PUSH] Lỗi không xác định khi gửi tới {sub_id}: {e}")
+
+    for sub_id in expired:
+        try:
+            ref_subscriptions.child(sub_id).delete()
+        except Exception:
+            pass
+
+    if sent or expired:
+        print(f"[🔔 PUSH] Gửi thành công {sent} thiết bị"
+              f"{f', dọn {len(expired)} subscription hết hạn' if expired else ''} cho {item['symbol']}")
 
 # ------------------------------------------------------------------
 # 3. WATCHLIST TOP COIN THEO VOLUME 24H (100% dữ liệu Binance, không phụ thuộc CoinGecko)
@@ -346,6 +428,7 @@ def health_check():
         "profiles": list(TRADE_PROFILES.keys()),
         "commodities_enabled": ENABLE_COMMODITIES,
         "commodities": list(COMMODITIES.keys()) if ENABLE_COMMODITIES else [],
+        "push_configured": bool(VAPID_PRIVATE_KEY_PEM),
     }
 
 def run_web_server():
