@@ -28,8 +28,9 @@ TOTAL_WEIGHT = sum(TF_WEIGHT.values())
 # chốt lời sớm cho chắc) và RR_MAX (tín hiệu mạnh, nhiều khung đồng thuận, để TP chạy xa hơn),
 # đồng thời bị chặn lại bởi vùng hỗ trợ/kháng cự "rộng" phía trước (xem generate_signal_for_profile).
 # Chỉnh qua biến môi trường RR_MIN / RR_MAX trên Render nếu muốn đổi biên độ.
-RR_MIN = float(os.environ.get("RR_MIN", "1.2"))
-RR_MAX = float(os.environ.get("RR_MAX", "3.5"))
+# R:R mục tiêu CỐ ĐỊNH 1:2 cho mọi tín hiệu (ổn định, dễ theo dõi/đối chiếu, thay vì dao động
+# theo độ tin cậy như bản trước). Chỉnh qua biến môi trường RR_TARGET nếu muốn đổi.
+RR_TARGET = float(os.environ.get("RR_TARGET", "2.0"))
 # Ngưỡng R:R tối thiểu để 1 tín hiệu được coi là đáng giao dịch — dưới 1:1 nghĩa là
 # lời tiềm năng THẤP HƠN rủi ro, cần thắng >50% lệnh mới hòa vốn, không đáng hiện ra.
 MIN_ACCEPTABLE_RR = float(os.environ.get("MIN_ACCEPTABLE_RR", "1.0"))
@@ -68,15 +69,9 @@ TP2_VOL_PCT = float(os.environ.get("TP2_VOL_PCT", "30"))
 TP3_VOL_PCT = float(os.environ.get("TP3_VOL_PCT", "20"))
 
 def dynamic_rr_ratio(confluence_pct):
-    """
-    Nội suy tuyến tính R:R theo độ hội tụ đa khung (confluence_pct):
-    - confluence càng thấp (tín hiệu yếu, ít khung đồng thuận) → R:R gần RR_MIN
-    - confluence càng cao (tín hiệu mạnh, nhiều khung đồng thuận) → R:R gần RR_MAX
-    Khoảng chuẩn hoá 30-100% dựa trên phạm vi confluence_pct thực tế bot thường đạt được.
-    """
-    lo, hi = 30.0, 100.0
-    t = max(0.0, min(1.0, (confluence_pct - lo) / (hi - lo)))
-    return RR_MIN + (RR_MAX - RR_MIN) * t
+    """R:R giờ CỐ ĐỊNH 1:2 cho mọi tín hiệu, không phân biệt độ tin cậy — giữ tên hàm để
+    không phải sửa nơi gọi, nhưng luôn trả về RR_TARGET bất kể confluence_pct."""
+    return RR_TARGET
 
 # ------------------------------------------------------------------
 # NGƯỠNG LỌC TÍN HIỆU — tăng độ chặt để giảm SL bị dính oan do bắt tín hiệu ở vùng giằng co
