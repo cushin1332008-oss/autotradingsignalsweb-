@@ -136,6 +136,26 @@
     letter-spacing: -0.01em;
   }
 
+  .header-right { display: flex; align-items: center; gap: 10px; }
+
+  .bell-btn {
+    position: relative;
+    width: 38px; height: 38px; border-radius: 10px;
+    background: var(--panel); border: 1px solid var(--border);
+    color: var(--text-dim); font-size: 16px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .bell-btn:hover { border-color: var(--gold-line); background: var(--gold-soft); }
+  .bell-dot {
+    display: none;
+    position: absolute; top: 6px; right: 6px;
+    width: 7px; height: 7px; border-radius: 50%;
+  }
+  .bell-dot.on { display: block; background: var(--buy); box-shadow: 0 0 6px rgba(34,200,143,0.7); }
+  .bell-dot.off { display: block; background: var(--text-faint); }
+  .bell-dot.blocked { display: block; background: var(--sell); }
+
   .status-pill {
     display: flex; align-items: center; gap: 8px;
     padding: 7px 13px; border-radius: 100px;
@@ -363,9 +383,14 @@
           <h1>Signal Screener</h1>
         </div>
       </div>
-      <div class="status-pill">
-        <span class="status-dot" id="statusDot"></span>
-        <span id="statusText">Đang kết nối…</span>
+      <div class="header-right">
+        <button class="bell-btn" id="bellBtn" title="Cài đặt thông báo">
+          🔔<span class="bell-dot" id="bellDot"></span>
+        </button>
+        <div class="status-pill">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">Đang kết nối…</span>
+        </div>
       </div>
     </header>
 
@@ -542,6 +567,7 @@
       localStorage.setItem('cushin_push_enabled', '1');
       notifBanner.classList.remove('show');
       showNotifStatus('✅ Đã bật thông báo — bạn sẽ nhận được tín hiệu mới ngay cả khi đóng trang.');
+      updateBellDot();
       document.getElementById('notifTestBtn').style.display = 'inline-block';
     } catch (err) {
       console.error('Lỗi đăng ký push:', err);
@@ -580,7 +606,22 @@
   }
   document.getElementById('notifTestBtn')?.addEventListener('click', sendTestPush);
 
+  const bellBtn = document.getElementById('bellBtn');
+  const bellDot = document.getElementById('bellDot');
+
+  function updateBellDot() {
+    bellDot.className = 'bell-dot';
+    if (!pushSupported()) { bellDot.classList.add('off'); return; }
+    if (Notification.permission === 'denied') { bellDot.classList.add('blocked'); return; }
+    if (Notification.permission === 'granted' && localStorage.getItem('cushin_push_enabled') === '1') {
+      bellDot.classList.add('on');
+      return;
+    }
+    bellDot.classList.add('off');
+  }
+
   function initNotifBanner() {
+    updateBellDot();
     if (!pushSupported()) return; // trình duyệt không hỗ trợ (VD Safari iOS chưa cài PWA) -> im lặng, không làm phiền
 
     if (Notification.permission === 'granted' && localStorage.getItem('cushin_push_enabled') === '1') {
@@ -590,7 +631,7 @@
       return; // đã bật rồi, không cần hỏi lại
     }
     if (Notification.permission === 'denied') {
-      return; // đã từ chối trước đó, tôn trọng lựa chọn, không hỏi lại
+      return; // đã từ chối trước đó, không tự hiện banner nữa -> dùng nút chuông 🔔 để xem trạng thái/hướng dẫn
     }
 
     const dismissedAt = parseInt(localStorage.getItem('cushin_notif_dismissed_at') || '0', 10);
@@ -599,6 +640,25 @@
 
     notifBanner.classList.add('show');
   }
+
+  // Nút chuông 🔔 luôn mở được — không phụ thuộc heuristic tự-hiện-1-lần ở trên, để bạn
+  // luôn có cách bật/kiểm tra thông báo dù banner tự động có hiện hay không.
+  bellBtn?.addEventListener('click', () => {
+    if (!pushSupported()) {
+      showNotifStatus('Trình duyệt/thiết bị này không hỗ trợ thông báo đẩy (VD Safari iPhone cần "Thêm vào Màn hình chính" trước).');
+      return;
+    }
+    if (Notification.permission === 'denied') {
+      showNotifStatus('Thông báo đang bị CHẶN cho trang này. Vào biểu tượng khoá 🔒 cạnh thanh địa chỉ trình duyệt → Quyền trang web → bật lại "Thông báo", rồi bấm chuông lần nữa.');
+      return;
+    }
+    if (Notification.permission === 'granted' && localStorage.getItem('cushin_push_enabled') === '1') {
+      document.getElementById('notifTestBtn').style.display = 'inline-block';
+      showNotifStatus('Thông báo đang BẬT trên thiết bị này.');
+      return;
+    }
+    notifBanner.classList.add('show');
+  });
 
   notifEnableBtn?.addEventListener('click', subscribeToPush);
   notifDismissBtn?.addEventListener('click', () => {
