@@ -7,7 +7,7 @@ import pandas as pd
 import firebase_admin
 from firebase_admin import credentials, db
 from apscheduler.schedulers.background import BackgroundScheduler
-from flask import Flask
+from flask import Flask, request
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -132,18 +132,27 @@ def send_push_to_all_subscribers(item):
 
     is_buy = "BUY" in item["signal"]
     tp1 = item["tp_levels"][0]["price"] if item.get("tp_levels") else item["take_profit"]
+    # Kèm profile + symbol vào URL -> bấm vào thông báo sẽ tự nhảy đúng tab + cuộn tới đúng card
+    click_url = f"{SITE_URL}/?profile={item['profile']}&symbol={item['symbol']}"
     payload = json.dumps({
         "title": f"{'🟢' if is_buy else '🔴'} {item['symbol']} — {item['signal']}",
         "body": f"{item['trade_timeframe']} · Entry {item['entry']} · SL {item['stop_loss']} · TP1 {tp1}",
-        "url": SITE_URL,
+        "url": click_url,
     })
 
-    sent, expired = 0, []
+    sent, expired = _dispatch_push_to_subs(subs, payload, vapid)
+    if sent or expired:
+        print(f"[🔔 PUSH] Gửi thành công {sent} thiết bị"
+              f"{f', dọn {expired} subscription hết hạn' if expired else ''} cho {item['symbol']}")
+
+def _dispatch_push_to_subs(subs, payload_json, vapid):
+    """Gửi 1 payload JSON (chuỗi) cho 1 tập hợp subscriptions {sub_id: sub_info}, tự dọn hết hạn."""
+    sent, expired_ids = 0, []
     for sub_id, sub_info in subs.items():
         try:
             webpush(
                 subscription_info=sub_info,
-                data=payload,
+                data=payload_json,
                 vapid_private_key=vapid,
                 vapid_claims={"sub": f"mailto:{VAPID_CLAIMS_EMAIL}"},
             )
@@ -151,21 +160,18 @@ def send_push_to_all_subscribers(item):
         except WebPushException as e:
             status = getattr(e.response, "status_code", None)
             if status in (404, 410):  # subscription hết hạn / người dùng đã tắt thông báo
-                expired.append(sub_id)
+                expired_ids.append(sub_id)
             else:
                 print(f"[⚠️ PUSH] Lỗi gửi tới {sub_id}: {e}")
         except Exception as e:
             print(f"[⚠️ PUSH] Lỗi không xác định khi gửi tới {sub_id}: {e}")
 
-    for sub_id in expired:
+    for sub_id in expired_ids:
         try:
             ref_subscriptions.child(sub_id).delete()
         except Exception:
             pass
-
-    if sent or expired:
-        print(f"[🔔 PUSH] Gửi thành công {sent} thiết bị"
-              f"{f', dọn {len(expired)} subscription hết hạn' if expired else ''} cho {item['symbol']}")
+    return sent, len(expired_ids)
 
 # ------------------------------------------------------------------
 # 3. WATCHLIST TOP COIN THEO VOLUME 24H (100% dữ liệu Binance, không phụ thuộc CoinGecko)
@@ -264,12 +270,34 @@ def get_top_watchlist():
             _watchlist_cache["ts"] = now
             print(f"[📋 WATCHLIST] {len(symbols)} coin đạt chuẩn volume ≥ {MIN_VOLUME_USDT:,.0f} USDT/24h "
                   f"(trong tổng {len(candidates)} cặp đủ điều kiện)")
+            check_watchlist_health(len(symbols))
             return symbols
     except Exception as e:
         print(f"[⚠️ WATCHLIST] Lỗi lấy danh sách watchlist: {e}")
 
     print("[⚠️ WATCHLIST] Dùng danh sách dự phòng do không lấy được dữ liệu Binance.")
+    check_watchlist_health(len(_watchlist_cache["list"] or FALLBACK_WATCHLIST), forced_fallback=True)
     return _watchlist_cache["list"] or FALLBACK_WATCHLIST
+
+# Ngưỡng cảnh báo: nếu watchlist tụt xuống dưới mức này, khả năng cao Binance API đang gặp
+# sự cố (rate-limit, chặn IP, lỗi tạm thời...) chứ không phải thị trường tự nhiên ít coin đủ
+# volume — cần biết để tránh bot âm thầm chạy với dữ liệu thiếu mà không ai hay.
+MIN_HEALTHY_WATCHLIST = int(os.environ.get("MIN_HEALTHY_WATCHLIST", "20"))
+ref_system_status = db.reference('system_status')
+
+def check_watchlist_health(size, forced_fallback=False):
+    is_degraded = forced_fallback or size < MIN_HEALTHY_WATCHLIST
+    if is_degraded:
+        print(f"[🚨 HEALTH] Watchlist bất thường thấp ({size} coin, ngưỡng {MIN_HEALTHY_WATCHLIST}) "
+              f"— nghi ngờ Binance API đang gặp sự cố.")
+    try:
+        ref_system_status.update({
+            "watchlist_health": "degraded" if is_degraded else "healthy",
+            "watchlist_size": size,
+            "checked_at": now_vn_str(),
+        })
+    except Exception as e:
+        print(f"[⚠️ HEALTH] Lỗi ghi system_status: {e}")
 
 def format_volume(vol):
     if vol >= 1_000_000_000:
@@ -431,6 +459,48 @@ def health_check():
         "push_configured": bool(VAPID_PRIVATE_KEY_PEM),
     }
 
+@app.after_request
+def add_cors_headers(response):
+    """Cho phép frontend (domain Vercel khác) gọi được /test-push từ trình duyệt."""
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return response
+
+@app.route("/test-push", methods=["POST", "OPTIONS"])
+def test_push():
+    """Gửi 1 thông báo thử ngay lập tức tới 1 thiết bị cụ thể (sub_id gửi từ frontend)."""
+    if request.method == "OPTIONS":
+        return "", 204  # trả lời preflight CORS
+
+    vapid = get_vapid()
+    if not vapid:
+        return {"ok": False, "error": "Chưa cấu hình VAPID_PRIVATE_KEY trên server."}, 400
+
+    data = request.get_json(silent=True) or {}
+    sub_id = data.get("sub_id")
+    if not sub_id:
+        return {"ok": False, "error": "Thiếu sub_id."}, 400
+
+    try:
+        sub_info = ref_subscriptions.child(sub_id).get()
+    except Exception as e:
+        return {"ok": False, "error": f"Lỗi đọc subscription: {e}"}, 500
+
+    if not sub_info:
+        return {"ok": False, "error": "Không tìm thấy subscription này (có thể chưa đăng ký hoặc đã hết hạn)."}, 404
+
+    payload = json.dumps({
+        "title": "🔔 Test — CuShin Terminal",
+        "body": "Push thông báo đang hoạt động bình thường!",
+        "url": SITE_URL,
+    })
+    sent, expired = _dispatch_push_to_subs({sub_id: sub_info}, payload, vapid)
+
+    if sent:
+        return {"ok": True, "message": "Đã gửi thông báo thử."}
+    return {"ok": False, "error": "Gửi thất bại — subscription có thể đã hết hạn."}, 400
+
 def run_web_server():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
@@ -512,6 +582,54 @@ def update_open_trades():
     if updated_count:
         print(f"[📊 PERFORMANCE] Đóng {updated_count} lệnh trong lần kiểm tra này.")
 
+# Cảnh báo nếu win rate THẬT của 1 profile tụt quá thấp — nhưng chỉ khi đã có ĐỦ MẪU
+# (tránh báo động giả khi mới có vài lệnh, thắng/thua ngẫu nhiên chưa nói lên điều gì).
+# Với R:R trung bình ~1:2, hoà vốn cần thắng ~33.3% — cảnh báo nếu tụt dưới ngưỡng gần đó.
+WIN_RATE_ALERT_MIN_SAMPLE = int(os.environ.get("WIN_RATE_ALERT_MIN_SAMPLE", "30"))
+WIN_RATE_ALERT_THRESHOLD = float(os.environ.get("WIN_RATE_ALERT_THRESHOLD", "35.0"))
+WIN_RATE_ALERT_COOLDOWN_HOURS = float(os.environ.get("WIN_RATE_ALERT_COOLDOWN_HOURS", "24"))
+ref_wr_alerts = db.reference('win_rate_alerts')
+
+def check_win_rate_alerts(by_profile):
+    try:
+        last_alerts = ref_wr_alerts.get() or {}
+    except Exception:
+        last_alerts = {}
+
+    now = time.time()
+    for profile_key, bucket in by_profile.items():
+        decided = bucket["tp"] + bucket["sl"]
+        wr = bucket.get("win_rate")
+        if wr is None or decided < WIN_RATE_ALERT_MIN_SAMPLE or wr >= WIN_RATE_ALERT_THRESHOLD:
+            continue
+
+        last_ts = last_alerts.get(profile_key, 0)
+        if now - last_ts < WIN_RATE_ALERT_COOLDOWN_HOURS * 3600:
+            continue  # đã cảnh báo gần đây, tránh spam liên tục mỗi 5 phút
+
+        label = TRADE_PROFILES.get(profile_key, {}).get("label", profile_key)
+        print(f"[🚨 PERFORMANCE] Cảnh báo: {label} có win rate {wr}% trên {decided} lệnh "
+              f"(dưới ngưỡng {WIN_RATE_ALERT_THRESHOLD}%) — cân nhắc xem lại tham số bộ lọc.")
+
+        vapid = get_vapid()
+        if vapid:
+            try:
+                subs = ref_subscriptions.get() or {}
+                if subs:
+                    payload = json.dumps({
+                        "title": "🚨 Win rate thấp bất thường",
+                        "body": f"{label}: {wr}% trên {decided} lệnh (dưới ngưỡng {WIN_RATE_ALERT_THRESHOLD}%)",
+                        "url": SITE_URL,
+                    })
+                    _dispatch_push_to_subs(subs, payload, vapid)
+            except Exception as e:
+                print(f"[⚠️ PERFORMANCE] Lỗi gửi cảnh báo win rate: {e}")
+
+        try:
+            ref_wr_alerts.update({profile_key: now})
+        except Exception:
+            pass
+
 def recompute_stats():
     """Tính lại win rate tổng + theo từng profile, ghi vào performance_stats cho frontend đọc."""
     try:
@@ -542,6 +660,8 @@ def recompute_stats():
     overall["win_rate"] = win_rate(overall)
     for bucket in by_profile.values():
         bucket["win_rate"] = win_rate(bucket)
+
+    check_win_rate_alerts(by_profile)
 
     try:
         ref_stats.set({
