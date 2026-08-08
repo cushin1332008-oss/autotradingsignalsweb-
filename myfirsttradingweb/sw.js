@@ -37,7 +37,17 @@ self.addEventListener('push', (event) => {
 // Khi người dùng bấm vào thông báo -> mở (hoặc điều hướng) tab tới đúng URL kèm profile/symbol
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = event.notification.data?.url || '/';
+  const rawUrl = event.notification.data?.url || '/';
+
+  // Luôn chuẩn hoá qua URL API trước khi dùng — nếu rawUrl thiếu "https://" hoặc bị sai định
+  // dạng vì lý do gì đó, cách này BẢO VỆ khỏi lỗi domain bị lặp 2 lần (self.location.origin
+  // + rawUrl) thay vì mù quáng nối chuỗi. URL tuyệt đối hợp lệ thì giữ nguyên không đổi.
+  let targetUrl;
+  try {
+    targetUrl = new URL(rawUrl, self.location.origin).href;
+  } catch (e) {
+    targetUrl = self.location.origin + '/';
+  }
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clientList) => {
