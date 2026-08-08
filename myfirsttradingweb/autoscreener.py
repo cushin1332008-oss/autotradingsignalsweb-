@@ -102,7 +102,13 @@ def notify_new_signals(signals_to_upload):
 VAPID_PRIVATE_KEY_PEM = os.environ.get("VAPID_PRIVATE_KEY", "").replace("\\n", "\n")
 VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "")
 VAPID_CLAIMS_EMAIL = os.environ.get("VAPID_CLAIMS_EMAIL", "admin@example.com")
-SITE_URL = os.environ.get("SITE_URL", "https://cushintradingautosignals.vercel.app")
+SITE_URL = os.environ.get("SITE_URL", "https://cushintradingautosignals.vercel.app").strip()
+# Phòng trường hợp bạn set biến môi trường SITE_URL trên Render mà quên "https://" ở đầu —
+# thiếu scheme khiến trình duyệt hiểu nhầm domain là đường dẫn tương đối, tự nối vào domain
+# gốc gây lỗi "domain bị lặp 2 lần" khi bấm vào thông báo push.
+if SITE_URL and not SITE_URL.startswith(("http://", "https://")):
+    SITE_URL = "https://" + SITE_URL
+SITE_URL = SITE_URL.rstrip("/")  # bỏ dấu / cuối để nối chuỗi URL phía sau không bị lặp //
 
 _vapid_instance = None
 
