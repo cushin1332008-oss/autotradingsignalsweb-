@@ -439,18 +439,21 @@ def dynamic_risk_percent(confluence_pct):
 # khung lớn (H4) có SL rộng hơn nên cần đòn bẩy thấp hơn dù risk% giữ nguyên.
 # CRYPTO: trần theo đúng mức BingX Perpetual Futures thực tế cho phép (~150-200x).
 LEVERAGE_RANGE_BY_PROFILE = {
-    "SCALP":    (50, 200),   # M15 — biến động ngắn hạn, SL hẹp
-    "SWING":    (30, 125),   # H1
-    "POSITION": (20, 75),    # H4 — biến động rộng hơn, SL xa hơn
+    # Floor hạ mạnh (so với bản trước 50/30/20) để bot có thể chọn đòn bẩy thấp hơn khi
+    # khoảng cách SL đủ rộng để không cần đòn bẩy cao mới đạt đúng risk_percent — tránh
+    # ép buộc "ăn phí oan" (phí giao dịch tỷ lệ THUẬN với đòn bẩy, xem calc_position_sizing).
+    "SCALP":    (10, 200),   # M15 — biến động ngắn hạn, SL hẹp
+    "SWING":    (10, 125),   # H1
+    "POSITION": (5, 75),     # H4 — biến động rộng hơn, SL xa hơn
 }
 # HÀNG HOÁ (Vàng/Dầu qua BingX "Standard Futures"/Forex Perpetual): sàn cho phép trần cao
 # hơn crypto (tới 500x theo công bố của BingX), nhưng vẫn kẹp theo từng khung như trên.
 COMMODITY_LEVERAGE_RANGE_BY_PROFILE = {
-    "SCALP":    (50, 500),
-    "SWING":    (30, 300),
-    "POSITION": (20, 150),
+    "SCALP":    (10, 500),
+    "SWING":    (10, 300),
+    "POSITION": (5, 150),
 }
-DEFAULT_LEVERAGE_RANGE = (20, 100)
+DEFAULT_LEVERAGE_RANGE = (5, 100)
 
 # Số dư tài khoản THỰC (USDT) — khai báo để bot tính ra số tiền ký quỹ cụ thể (USDT) và
 # tự nâng đòn bẩy khi cần để đạt khối lượng lệnh tối thiểu sàn yêu cầu với vốn nhỏ.
@@ -464,6 +467,29 @@ MIN_NOTIONAL_USDT = float(os.environ.get("MIN_NOTIONAL_USDT", "5.0"))
 # viết code này — trần thực tế cao nhất là 500x (BingX Standard Futures/Forex/hàng hoá).
 # Nếu để lộ giá trị vượt xa thực tế sàn hỗ trợ, bot sẽ đưa ra con số không dùng được thật.
 LEVERAGE_STEPS = [1, 2, 3, 5, 10, 15, 20, 25, 30, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500]
+
+# ------------------------------------------------------------------
+# PHÍ GIAO DỊCH + FUNDING + GIÁ THANH LÝ ƯỚC TÍNH
+# ------------------------------------------------------------------
+# Phí % mỗi CHIỀU (vào hoặc ra) tính trên NOTIONAL — BingX taker fee phổ biến ~0.05%.
+TRADING_FEE_PCT_PER_SIDE = float(os.environ.get("TRADING_FEE_PCT_PER_SIDE", "0.05"))
+# Funding rate trung bình mỗi 8 tiếng (dao động quanh 0-0.01%, dùng ước tính trung bình).
+FUNDING_RATE_PCT_PER_8H = float(os.environ.get("FUNDING_RATE_PCT_PER_8H", "0.01"))
+# Thời gian giữ lệnh trung bình ƯỚC TÍNH theo từng khung — dùng để ước tính số lần bị
+# trừ funding, KHÔNG phải cam kết chính xác (không thể biết trước lệnh sẽ đóng khi nào).
+AVG_HOLD_HOURS_BY_PROFILE = {"SCALP": 4, "SWING": 24, "POSITION": 96}
+# Maintenance margin rate ƯỚC TÍNH dùng để tính giá thanh lý — mức thực tế do SÀN quyết định,
+# thay đổi theo từng cặp/khối lượng lệnh, con số này chỉ là xấp xỉ hợp lý cho tier retail phổ biến.
+MAINTENANCE_MARGIN_RATE = float(os.environ.get("MAINTENANCE_MARGIN_RATE", "0.005"))
+
+def estimate_liquidation_price(entry, leverage, is_buy):
+    """Ước tính giá thanh lý (isolated margin, đơn giản hoá) — KHÔNG chính xác 100% vì mỗi
+    sàn/tier có công thức maintenance margin riêng, chỉ dùng để CẢNH BÁO tương đối."""
+    if leverage <= 0:
+        return None
+    if is_buy:
+        return entry * (1 - 1 / leverage + MAINTENANCE_MARGIN_RATE)
+    return entry * (1 + 1 / leverage - MAINTENANCE_MARGIN_RATE)
 
 def classify_confidence(confluence_pct):
     """Chỉ dùng để HIỂN THỊ độ tin cậy tín hiệu — KHÔNG còn dùng để tự giảm risk%."""
@@ -482,29 +508,29 @@ def snap_leverage(raw_leverage):
 
 def calc_position_sizing(entry, stop_loss, confluence_pct, profile_key,
                           risk_percent=None, margin_pct_anchor=None, account_balance=None,
-                          asset_class="crypto"):
+                          asset_class="crypto", rr_ratio=None, is_buy=True):
     """
     Trả về dict:
     - confidence_level: nhãn độ tin cậy tín hiệu
-    - risk_percent: % tài khoản chấp nhận mất nếu dính SL — LINH HOẠT theo confluence_pct
-      (tín hiệu mạnh → gần RISK_PERCENT_MAX, tín hiệu yếu → gần RISK_PERCENT_MIN)
-    - leverage: đòn bẩy đề xuất, đã kẹp trong khung riêng của profile (VD SCALP: 50-200x)
-    - margin_pct: % tài khoản dùng làm ký quỹ — TÍNH LẠI theo leverage cuối cùng, nên sẽ
-      THAY ĐỔI theo từng lệnh: đòn bẩy càng cao (khung nhỏ, SL hẹp) → margin càng THẤP;
-      đòn bẩy càng thấp (khung lớn, SL rộng) → margin cần cao hơn để giữ đúng risk_percent.
-    - leverage_capped: True nếu đòn bẩy CẦN vượt trần của profile (đã kẹp xuống trần —
-      risk thực tế khi đó sẽ CAO HƠN risk_percent hiển thị, vì không đủ đòn bẩy để đạt
-      đúng risk% mong muốn — cân nhắc kỹ trước khi vào lệnh này)
-    - margin_usdt, notional_usdt: số tiền cụ thể (USDT) NẾU bạn khai báo ACCOUNT_BALANCE_USDT,
-      None nếu không khai báo
-    - min_notional_adjusted: True nếu đòn bẩy đã được nâng lên để đạt khối lượng lệnh tối thiểu
-      sàn yêu cầu (áp dụng khi vốn nhỏ khiến margin quá ít USDT)
+    - risk_percent: % tài khoản chấp nhận mất nếu dính SL (GIÁ THUẦN, chưa trừ phí)
+    - leverage: đòn bẩy đề xuất, đã kẹp trong khung profile VÀ đã kiểm tra an toàn thanh lý
+    - margin_pct: % tài khoản dùng làm ký quỹ — tính lại theo leverage cuối cùng
+    - leverage_capped: True nếu đòn bẩy CẦN vượt trần profile (risk thực tế cao hơn hiển thị)
+    - liquidation_price_est: giá thanh lý ƯỚC TÍNH (không chính xác 100%, xem docstring hàm
+      estimate_liquidation_price) — dùng để nhận biết nếu SL có nguy cơ không kịp khớp trước
+      khi bị sàn thanh lý
+    - leverage_reduced_for_liquidation_safety: True nếu bot đã TỰ HẠ đòn bẩy so với mức tính
+      ban đầu để đảm bảo giá thanh lý nằm SAU (không sớm hơn) mức SL của bạn
+    - fee_pct_of_margin: % tài khoản mất vào phí giao dịch (cả 2 chiều vào/ra) — CÀNG CAO khi
+      đòn bẩy càng lớn (phí tính trên notional, không phải trên margin)
+    - est_funding_pct_of_margin: % tài khoản ước tính mất vào phí funding nếu giữ lệnh tới khi
+      chạm TP (ước tính theo thời gian giữ lệnh trung bình của profile, KHÔNG chính xác)
+    - net_loss_pct_if_sl: risk_percent CỘNG phí — số % thực tế mất nếu dính SL
+    - net_profit_pct_if_tp: lợi nhuận thực tế SAU phí + funding nếu chạm TP chính (TP2)
+    - margin_usdt, notional_usdt: số tiền cụ thể (USDT) NẾU khai báo ACCOUNT_BALANCE_USDT
+    - min_notional_adjusted: True nếu đòn bẩy được nâng để đạt khối lượng lệnh tối thiểu sàn
     """
-    # risk_percent giờ mặc định TÍNH THEO độ tin cậy tín hiệu, không còn là 1 hằng số cố định.
-    # Truyền risk_percent thủ công vào tham số nếu muốn ép về 1 mức cố định như trước.
     risk_percent = risk_percent if risk_percent is not None else dynamic_risk_percent(confluence_pct)
-    # margin_pct_anchor CHỈ dùng làm điểm khởi đầu để ước tính đòn bẩy hợp lý ban đầu,
-    # KHÔNG phải giá trị margin cuối cùng — margin thực sẽ được tính lại bên dưới.
     margin_anchor = margin_pct_anchor if margin_pct_anchor is not None else MARGIN_PCT_TARGET_DEFAULT
     account_balance = account_balance if account_balance is not None else ACCOUNT_BALANCE_USDT
     confidence_label = classify_confidence(confluence_pct)
@@ -517,6 +543,9 @@ def calc_position_sizing(entry, stop_loss, confluence_pct, profile_key,
             "confidence_level": confidence_label, "risk_percent": risk_percent,
             "margin_pct": margin_anchor, "leverage": min_lev, "leverage_capped": False,
             "margin_usdt": None, "notional_usdt": None, "min_notional_adjusted": False,
+            "liquidation_price_est": None, "leverage_reduced_for_liquidation_safety": False,
+            "fee_pct_of_margin": None, "est_funding_pct_of_margin": None,
+            "net_loss_pct_if_sl": risk_percent, "net_profit_pct_if_tp": None,
         }
 
     # % tài khoản cần "phơi nhiễm" (notional) để đúng risk_percent, bất kể dùng đòn bẩy nào —
@@ -530,10 +559,6 @@ def calc_position_sizing(entry, stop_loss, confluence_pct, profile_key,
     leverage_capped = raw_leverage > max_lev
     leverage = max(min_lev, min(leverage, max_lev))
 
-    # QUAN TRỌNG: sau khi đã chốt leverage theo khung của profile, TÍNH LẠI margin_pct
-    # tương ứng = notional_pct / leverage. Đây là bước sửa lỗi margin luôn cố định 8% —
-    # giờ margin sẽ tự nhỏ đi khi đòn bẩy cao (M15+200x) và tự lớn hơn khi đòn bẩy thấp
-    # (H4+20x), luôn giữ đúng risk_percent mục tiêu.
     margin_pct = notional_pct / leverage if leverage > 0 else margin_anchor
     margin_pct = min(margin_pct, 100.0)  # không đề xuất vượt quá 100% tài khoản
 
@@ -541,8 +566,6 @@ def calc_position_sizing(entry, stop_loss, confluence_pct, profile_key,
     notional_usdt = None
     min_notional_adjusted = False
 
-    # Nếu có khai báo vốn thực, kiểm tra xem margin quy ra USDT có đủ khối lượng lệnh tối thiểu
-    # sàn yêu cầu không — vốn nhỏ thường cần đòn bẩy cao hơn mới mở được lệnh hợp lệ.
     if account_balance and account_balance > 0:
         margin_usdt = round(account_balance * margin_pct / 100, 2)
         notional_usdt = round(margin_usdt * leverage, 2)
@@ -557,6 +580,54 @@ def calc_position_sizing(entry, stop_loss, confluence_pct, profile_key,
                 margin_usdt = round(account_balance * margin_pct / 100, 2)
             notional_usdt = round(margin_usdt * leverage, 2)
 
+    # ----------------------------------------------------------------
+    # AN TOÀN THANH LÝ: nếu giá thanh lý ước tính nằm TRƯỚC (gần entry hơn) SL, nghĩa là
+    # bạn có nguy cơ bị sàn thanh lý TRƯỚC KHI SL kịp khớp — tự động hạ đòn bẩy xuống mức
+    # thấp hơn cho tới khi giá thanh lý nằm SAU SL, hoặc chạm mức đòn bẩy thấp nhất có thể.
+    # ----------------------------------------------------------------
+    liquidation_price = estimate_liquidation_price(entry, leverage, is_buy)
+    leverage_reduced_for_safety = False
+
+    def _is_safe(liq_price):
+        if liq_price is None:
+            return True
+        return (liq_price <= stop_loss) if is_buy else (liq_price >= stop_loss)
+
+    if not _is_safe(liquidation_price):
+        for step in sorted([s for s in LEVERAGE_STEPS if s <= leverage], reverse=True):
+            candidate_liq = estimate_liquidation_price(entry, step, is_buy)
+            if _is_safe(candidate_liq):
+                leverage = step
+                liquidation_price = candidate_liq
+                leverage_reduced_for_safety = True
+                break
+        else:
+            leverage = LEVERAGE_STEPS[0]  # ngay cả 1x cũng có thể không đủ an toàn với SL quá hẹp -> dùng mức thấp nhất, vẫn cảnh báo
+            liquidation_price = estimate_liquidation_price(entry, leverage, is_buy)
+            leverage_reduced_for_safety = True
+
+        # Leverage đổi -> margin phải tính lại theo giá trị mới để vẫn đúng risk_percent mục tiêu
+        margin_pct = min(notional_pct / leverage, 100.0) if leverage > 0 else margin_pct
+        if account_balance and account_balance > 0:
+            margin_usdt = round(account_balance * margin_pct / 100, 2)
+            notional_usdt = round(margin_usdt * leverage, 2)
+
+    # ----------------------------------------------------------------
+    # PHÍ GIAO DỊCH + FUNDING — quy đổi ra % TÀI KHOẢN (margin), không phải % giá.
+    # Phí/funding tính trên NOTIONAL, nên quy ra % margin phải NHÂN VỚI ĐÒN BẨY — đây là lý do
+    # đòn bẩy cao khiến phí "ăn" vào tài khoản nhiều hơn hẳn so với giao dịch không đòn bẩy.
+    # ----------------------------------------------------------------
+    fee_pct_of_margin = round(leverage * TRADING_FEE_PCT_PER_SIDE * 2, 3)  # 2 chiều: vào + ra
+    avg_hold_hours = AVG_HOLD_HOURS_BY_PROFILE.get(profile_key, 24)
+    funding_periods = avg_hold_hours / 8
+    est_funding_pct_of_margin = round(leverage * funding_periods * FUNDING_RATE_PCT_PER_8H, 3)
+
+    net_loss_pct_if_sl = round(risk_percent + fee_pct_of_margin, 3)
+    net_profit_pct_if_tp = None
+    if rr_ratio is not None:
+        gross_profit_pct = risk_percent * rr_ratio
+        net_profit_pct_if_tp = round(gross_profit_pct - fee_pct_of_margin - est_funding_pct_of_margin, 3)
+
     return {
         "confidence_level": confidence_label,
         "risk_percent": risk_percent,
@@ -566,4 +637,10 @@ def calc_position_sizing(entry, stop_loss, confluence_pct, profile_key,
         "margin_usdt": margin_usdt,
         "notional_usdt": notional_usdt,
         "min_notional_adjusted": min_notional_adjusted,
+        "liquidation_price_est": round(liquidation_price, 6) if liquidation_price else None,
+        "leverage_reduced_for_liquidation_safety": leverage_reduced_for_safety,
+        "fee_pct_of_margin": fee_pct_of_margin,
+        "est_funding_pct_of_margin": est_funding_pct_of_margin,
+        "net_loss_pct_if_sl": net_loss_pct_if_sl,
+        "net_profit_pct_if_tp": net_profit_pct_if_tp,
     }
