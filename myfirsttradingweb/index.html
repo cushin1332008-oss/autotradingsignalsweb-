@@ -291,6 +291,11 @@
   .badge--sell { background: var(--sell-soft); color: var(--sell); border-color: var(--sell-line); }
 
   .meta-row { margin: 8px 0 14px; }
+  .corr-warn {
+    font-size: 10.5px; color: var(--gold); background: var(--gold-soft);
+    border: 1px solid var(--gold-line); border-radius: 7px; padding: 6px 10px;
+    margin-bottom: 12px; line-height: 1.5;
+  }
   .meta-badge {
     display: inline-flex; align-items: center; gap: 6px;
     font-size: 10.5px; font-weight: 600; font-family: var(--font-mono);
@@ -846,6 +851,11 @@
       </div>` : '';
 
     const leverageWarn = item.leverage_capped ? '<span class="risk-warn">⚠ vượt trần khung</span>' : '';
+    const liqSafetyNote = item.leverage_reduced_for_liquidation_safety
+      ? '<span class="risk-warn" title="Đòn bẩy đã được tự hạ để đảm bảo SL kích hoạt trước khi bị thanh lý">🛡️ đã hạ đòn bẩy để an toàn</span>' : '';
+    const correlationBadge = item.correlation_warning
+      ? `<div class="corr-warn">⚠️ ${item.concurrent_signals_same_direction} tín hiệu cùng chiều đang hoạt động — rủi ro tương quan cao nếu vào hết</div>` : '';
+    const netProfitColor = (item.net_profit_pct_if_tp ?? 0) >= 0 ? 'var(--buy)' : 'var(--sell)';
 
     return `
       <div class="card ${dirClass}" data-symbol="${item.symbol}">
@@ -854,6 +864,7 @@
           <span class="badge ${badgeClass}">${item.signal}</span>
         </div>
         <div class="meta-row"><span class="meta-badge">${meta.icon} ${item.trade_timeframe}</span></div>
+        ${correlationBadge}
 
         <div class="confluence">
           <div class="confluence-label"><span>Độ hội tụ đa khung</span><b class="mono">${item.confluence_pct}%</b></div>
@@ -864,6 +875,7 @@
           <div class="price-row"><span class="k">Entry</span><span class="v">${item.entry}</span></div>
           <div class="price-row"><span class="k">Stop Loss</span><span class="v sell">${item.stop_loss}</span></div>
           ${tpRows}
+          <div class="price-row"><span class="k">Giá thanh lý (ước tính)</span><span class="v" style="color:var(--gold);font-size:12px">${item.liquidation_price_est ?? '—'}</span></div>
           <div class="price-row"><span class="k">Hỗ trợ / Kháng cự</span><span class="v info" style="font-size:11.5px">${item.support} / ${item.resistance}</span></div>
           <div class="price-row"><span class="k">Volume 24h</span><span class="v" style="color:var(--text-dim);font-size:11.5px">${item.volume_24h_fmt || 'N/A'}</span></div>
         </div>
@@ -872,9 +884,15 @@
 
         <div class="risk-box ${confClass}">
           <div class="risk-row"><span class="k">Độ tin cậy</span><span class="v">${item.confidence_level}</span></div>
-          <div class="risk-row"><span class="k">Risk nếu dính SL</span><span class="v">${item.risk_percent}%</span></div>
+          <div class="risk-row"><span class="k">Risk nếu dính SL (giá thuần)</span><span class="v">${item.risk_percent}%</span></div>
           <div class="risk-row"><span class="k">Margin đề xuất</span><span class="v">${item.margin_pct}%</span></div>
-          <div class="risk-row"><span class="k">Đòn bẩy đề xuất</span><span class="v">${item.leverage}x${leverageWarn}</span></div>
+          <div class="risk-row"><span class="k">Đòn bẩy đề xuất</span><span class="v">${item.leverage}x${leverageWarn}${liqSafetyNote}</span></div>
+          <div class="risk-row" style="border-top:1px dashed rgba(255,255,255,0.08);margin-top:6px;padding-top:8px;">
+            <span class="k">Phí giao dịch (2 chiều)</span><span class="v" style="color:var(--text-dim)">-${item.fee_pct_of_margin ?? '—'}%</span>
+          </div>
+          <div class="risk-row"><span class="k">Funding ước tính</span><span class="v" style="color:var(--text-dim)">-${item.est_funding_pct_of_margin ?? '—'}%</span></div>
+          <div class="risk-row"><span class="k">Mất thật nếu dính SL</span><span class="v" style="color:var(--sell)">-${item.net_loss_pct_if_sl ?? item.risk_percent}%</span></div>
+          <div class="risk-row"><span class="k">Lời thật nếu chạm TP2 (sau phí)</span><span class="v" style="color:${netProfitColor}">${item.net_profit_pct_if_tp ?? '—'}%</span></div>
         </div>
 
         <div class="stat-line">
