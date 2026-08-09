@@ -205,6 +205,11 @@ MARGIN_PCT_ANCHOR = float(os.environ.get("MARGIN_PCT_ANCHOR", "8.0"))  # điểm
 # Khai báo vốn thực (USDT) để bot tính margin/notional ra số tiền cụ thể và tự nâng đòn bẩy
 # khi vốn nhỏ không đủ đạt khối lượng lệnh tối thiểu sàn yêu cầu. Để 0 nếu chỉ cần tính theo %.
 ACCOUNT_BALANCE_USDT = float(os.environ.get("ACCOUNT_BALANCE_USDT", "0"))
+# Ngưỡng lời ròng tối thiểu (% tài khoản, SAU khi trừ phí giao dịch + funding ước tính) tại
+# TP2 để 1 tín hiệu được coi là đáng giao dịch. Vì phí tỷ lệ thuận với đòn bẩy, tín hiệu ở
+# đòn bẩy cao dễ bị loại hơn nếu lời ròng không đủ bù phí — đây là hành động THẬT trên phát
+# hiện "phí ăn % tài khoản đáng kể ở đòn bẩy cao", không chỉ hiển thị con số cho biết.
+MIN_NET_PROFIT_PCT = float(os.environ.get("MIN_NET_PROFIT_PCT", "0.3"))
 
 FALLBACK_WATCHLIST = [
     "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
@@ -215,17 +220,51 @@ _watchlist_cache = {"list": [], "ts": 0}
 _volume_cache = {"map": {}, "ts": 0}
 WATCHLIST_TTL = 3600
 
-def get_binance_usdt_bases():
-    print("[⏳ STEP] Đang lấy danh sách cặp USDT trên Binance...")
+_exchange_info_cache = {"bases": set(), "tick_sizes": {}, "ts": 0}
+
+def get_binance_exchange_info():
+    """Lấy 1 lần: danh sách base asset USDT + tick size (bước giá tối thiểu) từng cặp —
+    dùng tick size để làm tròn Entry/SL/TP đúng định dạng sàn yêu cầu, tránh lệnh bị từ chối
+    nếu copy nguyên số bot đưa ra vào form đặt lệnh thật."""
+    now = time.time()
+    if _exchange_info_cache["bases"] and now - _exchange_info_cache["ts"] < WATCHLIST_TTL:
+        return _exchange_info_cache["bases"], _exchange_info_cache["tick_sizes"]
+
+    print("[⏳ STEP] Đang lấy danh sách cặp USDT + tick size trên Binance...")
     res = session.get(BINANCE_EXCHANGE_INFO_URL, timeout=10)
     data = res.json()
-    bases = {
-        s["baseAsset"].upper()
-        for s in data.get("symbols", [])
-        if s.get("quoteAsset") == "USDT" and s.get("status") == "TRADING"
-    }
-    print(f"[✅ STEP] Có {len(bases)} coin base khớp USDT trên Binance.")
-    return bases
+    bases, tick_sizes = set(), {}
+    for s in data.get("symbols", []):
+        if s.get("quoteAsset") == "USDT" and s.get("status") == "TRADING":
+            bases.add(s["baseAsset"].upper())
+            for f in s.get("filters", []):
+                if f.get("filterType") == "PRICE_FILTER":
+                    try:
+                        tick_sizes[s["symbol"]] = float(f.get("tickSize", 0)) or None
+                    except (TypeError, ValueError):
+                        pass
+
+    _exchange_info_cache["bases"] = bases
+    _exchange_info_cache["tick_sizes"] = tick_sizes
+    _exchange_info_cache["ts"] = now
+    print(f"[✅ STEP] Có {len(bases)} coin base khớp USDT, {len(tick_sizes)} tick size.")
+    return bases, tick_sizes
+
+def get_binance_usdt_bases():
+    return get_binance_exchange_info()[0]
+
+# Hàng hoá không lấy tick size từ Binance được — dùng bước giá phổ biến hợp lý làm mặc định.
+COMMODITY_TICK_SIZE = {"XAUUSD": 0.01, "USOIL": 0.001}
+
+def round_to_tick(price, tick_size):
+    """Làm tròn giá về đúng bội số của tick_size (bước giá tối thiểu sàn cho phép)."""
+    if price is None or not tick_size or tick_size <= 0:
+        return price
+    steps = round(price / tick_size)
+    rounded = steps * tick_size
+    tick_str = f"{tick_size:.10f}".rstrip("0")
+    decimals = len(tick_str.split(".")[1]) if "." in tick_str else 0
+    return round(rounded, decimals)
 
 def get_binance_24h_volumes():
     now = time.time()
@@ -436,14 +475,41 @@ def scan_symbol(symbol, volumes_map, btc_context=None):
 
     asset_class = "commodity" if is_commodity else "crypto"
     volume_24h = volumes_map.get(symbol, 0)
+
+    tick_size = COMMODITY_TICK_SIZE.get(symbol) if is_commodity else _exchange_info_cache["tick_sizes"].get(symbol)
+
     output = {}
 
     for profile_key, signal in all_signals.items():
         sizing = calc_position_sizing(
             entry=signal["entry"], stop_loss=signal["stop_loss"], confluence_pct=signal["confluence_pct"],
             profile_key=profile_key, margin_pct_anchor=MARGIN_PCT_ANCHOR,
-            account_balance=ACCOUNT_BALANCE_USDT, asset_class=asset_class
+            account_balance=ACCOUNT_BALANCE_USDT, asset_class=asset_class,
+            rr_ratio=signal.get("rr_ratio"), is_buy=("BUY" in signal["signal"])
         )
+
+        # Làm tròn Entry/SL/TP/DCA/giá thanh lý về đúng tick size sàn thật — tránh copy số bot
+        # đưa ra vào form đặt lệnh mà bị sàn từ chối vì sai định dạng giá.
+        if tick_size:
+            signal["entry"] = round_to_tick(signal["entry"], tick_size)
+            signal["price"] = signal["entry"]
+            signal["stop_loss"] = round_to_tick(signal["stop_loss"], tick_size)
+            signal["take_profit"] = round_to_tick(signal["take_profit"], tick_size)
+            if signal.get("tp_levels"):
+                for lv in signal["tp_levels"]:
+                    lv["price"] = round_to_tick(lv["price"], tick_size)
+            if signal.get("dca_enabled"):
+                signal["dca_entry"] = round_to_tick(signal["dca_entry"], tick_size)
+                signal["avg_entry_if_filled"] = round_to_tick(signal["avg_entry_if_filled"], tick_size)
+            if sizing.get("liquidation_price_est"):
+                sizing["liquidation_price_est"] = round_to_tick(sizing["liquidation_price_est"], tick_size)
+
+        # Lọc tín hiệu LỖ RÒNG sau phí+funding — hành động thật trên phát hiện đòn bẩy cao
+        # khiến phí ăn mòn đáng kể tài khoản, không chỉ hiển thị con số cho biết.
+        net_profit = sizing.get("net_profit_pct_if_tp")
+        if net_profit is not None and net_profit < MIN_NET_PROFIT_PCT:
+            continue
+
         key = f"{symbol}_{profile_key}"
         output[key] = {
             "symbol": symbol,
@@ -695,6 +761,27 @@ def recompute_stats():
     except Exception as e:
         print(f"[⚠️ HISTORY] Lỗi ghi performance_stats: {e}")
 
+# Ngưỡng để gắn cờ cảnh báo "quá nhiều tín hiệu cùng chiều cùng lúc" — phần lớn altcoin
+# tương quan chặt với nhau và với BTC, nên nếu 15+ tín hiệu cùng là LONG (hay cùng SHORT)
+# trong 1 lần quét, tổng rủi ro thực tế nếu vào HẾT các lệnh đó cao hơn nhiều so với con số
+# risk% từng lệnh riêng lẻ — đây là rủi ro danh mục (portfolio risk), không phải lỗi thuật toán.
+CORRELATION_WARNING_THRESHOLD = int(os.environ.get("CORRELATION_WARNING_THRESHOLD", "15"))
+
+def apply_correlation_warnings(signals_to_upload):
+    if not signals_to_upload:
+        return
+    buy_count = sum(1 for v in signals_to_upload.values() if "BUY" in v["signal"])
+    sell_count = sum(1 for v in signals_to_upload.values() if "SELL" in v["signal"])
+
+    for item in signals_to_upload.values():
+        same_dir = buy_count if "BUY" in item["signal"] else sell_count
+        item["concurrent_signals_same_direction"] = same_dir
+        item["correlation_warning"] = same_dir >= CORRELATION_WARNING_THRESHOLD
+
+    if buy_count >= CORRELATION_WARNING_THRESHOLD or sell_count >= CORRELATION_WARNING_THRESHOLD:
+        print(f"[⚠️ CORRELATION] {buy_count} tín hiệu LONG, {sell_count} tín hiệu SHORT cùng lúc "
+              f"— rủi ro tương quan cao nếu vào hết cùng lúc.")
+
 def scan_and_push_to_firebase():
     start_ts = time.time()
     print(f"\n[🚀 SCANNING] Bắt đầu quét lúc: {now_vn_str()}...")
@@ -725,6 +812,8 @@ def scan_and_push_to_firebase():
                 print(f"[...] Đã quét {done_count}/{len(watchlist)} coin")
 
     elapsed = round(time.time() - start_ts, 1)
+
+    apply_correlation_warnings(signals_to_upload)
 
     if signals_to_upload:
         ref.set(signals_to_upload)
